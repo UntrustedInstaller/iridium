@@ -1,11 +1,13 @@
-bits 16
+bits 16 ; Do I need to explain this?
 
+; Set all those pesky global calls
 global kernel_init
 global asm_print_str
 global asm_print_char
 global cls
 global cur_col
 
+; Calling the shell function from the C file
 extern iridium_main
 
 ; =====================================================================
@@ -20,10 +22,10 @@ kernel_init:
     mov ds, ax
     mov es, ax
 
-    ; 2. FIX: Sync Stack Segment to 0x1000 to resolve the C pointer issues
+    ; 2. Sync Stack Segment to 0x1000
     mov ss, ax
     
-    ; 3. FIX: Clear the entire 32-bit ESP/EBP registers to wipe BIOS garbage
+    ; 3. Clear the entire 32-bit ESP/EBP registers to wipe BIOS garbage
     xor esp, esp        ; Zero out the full 32-bit register
     mov sp, 0xFFF0      ; Assign SP safely to the top of the 0x1000 segment boundary
     xor ebp, ebp        ; Zero out the full 32-bit EBP register
@@ -31,7 +33,7 @@ kernel_init:
 
     mov [boot_drive], dl
 
-    ; Intensive backgrounds and disable blinking
+    ; Intensive backgrounds and disable blinking (IBM PC leftovers)
     mov ax, 0x1003
     mov bl, 0x00        ; Disable blinking / enable intensive backgrounds
     int 0x10
@@ -39,12 +41,12 @@ kernel_init:
     ; Initial screen clear and paint
     call cls
 
-    ; Beep on boot
+    ; BEEP!
     mov ah, 0x0E
     mov al, 7
     int 0x10
 
-    ; Jump to our stabilized C Shell!
+    ; Jump to the C shell
     call iridium_main
 
     ; Safety net catch if C somehow crashes or returns
@@ -60,10 +62,10 @@ kernel_init:
 
 asm_print_str:
     pusha
-    push ds       ; Save data segment
-    push es       ; Save extra segment
+    push ds             ; Save data segment
+    push es             ; Save extra segment
     
-    mov ax, 0x1000 ; Ensure segments are locked to our flat binary base
+    mov ax, 0x1000      ; Ensure segments are locked to our flat binary base
     mov ds, ax
     mov es, ax
 
@@ -121,3 +123,7 @@ cls:
 
 boot_drive  db 0
 cur_col     db 0x1F     ; White text on Blue background (Default)
+
+; Everything after this in the original kernel file gets migrated over to C
+; Not only does this make code more readable, it frees me from the 
+; assembly portion of the OS, saving my sanity

@@ -1,5 +1,6 @@
 /* src/main.c */
 
+// STOP YELLING AT ME GCC 
 __asm__(".code16gcc\n");
 
 // Define explicit types
@@ -9,7 +10,7 @@ typedef unsigned short uint16_t;
 // Active terminal color attrib from the kernel
 extern uint8_t cur_col;
 
-// Forward declarations to satisfy compiler diagnostic checks
+// All of those declarations to shut the compiler up
 void print_str(const char* str);
 void print_char(char c);
 uint16_t get_key(void);
@@ -42,7 +43,7 @@ void print_char(char c) {
     );
 }
 
-/* Call BIOS to fetch keyboard interrupts using AT&T constraints */
+/* Call BIOS to fetch keyboard interrupts */
 uint16_t get_key(void) {
     uint16_t key;
     __asm__ __volatile__(
@@ -94,7 +95,7 @@ int strncmp(const char* s1, const char* s2, int n) {
     return *(const unsigned char*)s1 - *(const unsigned char*)s2;
 }
 
-/* Replace print_ram from kernel with base-10 math */
+/* Replace print_ram from kernel with easy-to-understand base-10 math (damn you assembly) */
 void print_int(uint16_t val) {
     char buf[6];
     int i = 5;
@@ -120,7 +121,7 @@ void print_int(uint16_t val) {
 void iridium_main() {
     clear_screen();
     print_str("==============================================\r\n");
-    print_str("              IRIDIUM ALLOY KERNEL            \r\n");
+    print_str("                 IRIDIUM C SHELL              \r\n"); //It's not really a kernel anymore, is it?
     print_str("==============================================\r\n\r\n");
 
     char cmd_buf[64];
@@ -139,11 +140,13 @@ void iridium_main() {
             uint16_t key = get_key();
             uint8_t ascii = key & 0xFF;
 
-            // Enter (Carriage Return)
+            // Oh my god. Input parsing is so much easier!
+
+            // Enter
             if (ascii == 13) {
                 print_str("\r\n");
-                // The buffer is already null-terminated by our clearing loop,
-                // but we explicitly ensure the string ends here.
+                // The buffer is already null-terminated by the clearing loop,
+                // but this explicitly ensures the string ends here.
                 cmd_buf[cmd_idx] = '\0';
                 break;
             }
@@ -157,7 +160,7 @@ void iridium_main() {
                     print_char(8);
                 }
             }
-            // Safe-to-print ASCII (printable characters)
+            // Safe-to-print ASCII (No funny business)
             else if (ascii >= 32 && ascii <= 126) {
                 if (cmd_idx < 63) {
                     cmd_buf[cmd_idx++] = ascii;
@@ -180,6 +183,7 @@ void iridium_main() {
         //  COMMAND LOGIC
         // =================================================================
 
+        //This is also much more simple
         char cmd_help[] = "help";
         char cmd_clear[] = "clear";
         char cmd_mem[] = "mem";
