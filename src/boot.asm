@@ -41,9 +41,9 @@ boot_start:
 
 ; Read Stage 2 from disk
     mov ah, 0x02        ; BIOS read sectors function
-    mov al, 16          ; 16 sectors
+    mov al, 32          ; Read 32 sectors safely encompassing string layouts
     mov ch, 0           ; Cylinder 0
-    mov cl, 2           ; Sector 2 (Sector 1 is Stage 1)
+    mov cl, 2           ; Sector 2
     mov dh, 0           ; Head 0
     ; dl is automatically set to the boot drive number by the BIOS on startup
 
