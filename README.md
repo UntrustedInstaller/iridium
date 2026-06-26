@@ -1,4 +1,4 @@
-# Iridium
+![Logo](IridiumOS.svg)  
 *Osmium's periodic neighbor.*  
 A work in progress C implementation of OsmiumOS
 
