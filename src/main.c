@@ -6,6 +6,7 @@ __asm__(".code16gcc\n");
 // Define explicit types
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
 
 // Active terminal color attrib from the kernel
 extern uint8_t cur_col;
@@ -114,21 +115,72 @@ void print_int(uint16_t val) {
     print_str(&buf[i]);
 }
 
+void print_hex_byte(uint8_t byte) {
+    const char hex_digits[] = "0123456789ABCDEF";
+    print_char(hex_digits[(byte>>4) & 0x0F]);
+    print_char(hex_digits[byte & 0x0F]);
+}
+
+void print_hex_word(uint16_t word) {
+    print_hex_byte((word >> 8) & 0xFF);
+    print_hex_byte(word & 0xFF);
+}
+
+void hexdump(const void* addr, int count) {
+    const uint8_t* ptr = (const uint8_t*)addr;
+
+    for (int i = 0; i < count; i += 16) {
+        // Current offset address
+        print_hex_word((uint16_t)(uint32_t)(ptr + i));
+        print_str(": ");
+
+        // Print out hex values (16 bytes / 1 line)
+        for (int j = 0; j < 16; j++) {
+            if (i + j < count) {
+                print_hex_byte(ptr[i + j]);
+                print_char(' ');
+            } else {
+                print_str("   "); // Pad out line if data is incomplete
+            }
+        }
+
+        print_str(" | ");
+
+        // Dump out ASCII characters 
+        for (int j = 0; j < 16; j++) {
+            if (i + j < count) {
+                uint8_t ch = ptr[i + j];
+                if (ch >= 32 && ch <= 126) {
+                    print_char((char)ch);
+                } else {
+                    print_char('.'); 
+                }
+            } else {
+                print_char(' ');
+            }
+        }
+
+        print_str("|\r\n");
+
+    } 
+}
+
 // =====================================================================
 //  IRIDIUM SHELL
 // =====================================================================
 
 void iridium_main() {
     clear_screen();
-    print_str("==============================================\r\n");
-    print_str("                 IRIDIUM C SHELL              \r\n"); //It's not really a kernel anymore, is it?
-    print_str("==============================================\r\n\r\n");
+    print_str("IridiumOS -- Osmium's periodic neighbor.\r\n");
+    print_int(get_mem_size());
+    print_str("KB RAM\r\n");
+    print_str("\r\n");
 
     char cmd_buf[64];
     int cmd_idx = 0;
 
     while (1) {
-        print_str("IR:> ");
+        print_str("OS:>");
         cmd_idx = 0;
 
         // Clear the buffer properly before accepting input
@@ -187,6 +239,7 @@ void iridium_main() {
         char cmd_help[] = "help";
         char cmd_clear[] = "clear";
         char cmd_mem[] = "mem";
+        char cmd_hexdump[] = "hexdump";
         char cmd_echo[] = "echo ";
         char cmd_theme[] = "theme ";
         char cmd_reboot[] = "reboot";
@@ -196,6 +249,7 @@ void iridium_main() {
             print_str("  help     - Show a list of system commands\r\n");
             print_str("  clear    - Clear the terminal interface\r\n");
             print_str("  mem      - Check how much RAM is available to the system\r\n");
+            print_str("  hexdump  - Dump 128 bytes of system memory\r\n");
             print_str("  echo     - Repeat user input to terminal\r\n");
             print_str("  theme    - Quick change color scheme (0-4)\r\n");
             print_str("  reboot   - Soft reboot the machine\r\n");
@@ -208,6 +262,11 @@ void iridium_main() {
             print_int(get_mem_size());
             print_str(" KB RAM.\r\n");
         }
+        else if (strcmp(cmd_buf, cmd_hexdump) == 0) {
+            print_str("Dumping segment 0x1000:0x0000:\r\n");
+            hexdump((const void*)0x0000, 128);
+        }
+
         else if (strncmp(cmd_buf, cmd_echo, 5) == 0) {
             print_str(cmd_buf + 5);
             print_str("\r\n");
