@@ -115,6 +115,7 @@ void print_int(uint16_t val) {
     print_str(&buf[i]);
 }
 
+//All the hexadecimal stuff
 void print_hex_byte(uint8_t byte) {
     const char hex_digits[] = "0123456789ABCDEF";
     print_char(hex_digits[(byte>>4) & 0x0F]);
@@ -279,9 +280,13 @@ void iridium_main() {
             else if (choice == '3') cur_col = 0x04;  // Red on Black
             else if (choice == '4') cur_col = 0x70;  // Black on White
             else {
-                print_str("ERR: Select theme 0-4\r\n");
+                print_str("ERR: Select theme 0-5\r\n");
             }
             clear_screen();
+            print_str("IridiumOS -- Osmium's periodic neighbor.\r\n");
+            print_int(get_mem_size());
+            print_str("KB RAM\r\n");
+            print_str("\r\n");
         }
         else if (strcmp(cmd_buf, cmd_reboot) == 0) {
             print_str("Rebooting...\r\n");
