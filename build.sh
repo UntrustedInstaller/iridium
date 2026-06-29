@@ -5,8 +5,9 @@ echo "=============================================="
 echo "               IRIDIUM BUILDER                "
 echo "=============================================="
 
-# Ensure the build directory exists
+# Ensure clean build workspaces exist
 mkdir -p build
+mkdir -p build/app
 
 # 1. Assemble Stage 1 (Boot Sector) stays raw flat binary
 echo "[*] Assembling Stage 1 (src/boot.asm)..."
@@ -16,34 +17,39 @@ nasm -f bin src/boot.asm -o build/boot.bin
 echo "[*] Assembling Stage 2 Assembly Base (src/kernel.asm)..."
 nasm -f elf32 src/kernel.asm -o build/kernel_asm.o
 
-# 3. Compile Stage 2 C Components
-echo "[*] Compiling Stage 2 C Components (src/main.c)..."
-# Added explicit stripping flags to eliminate _GLOBAL_OFFSET_TABLE_ and stack unwind junk
+# 3. Compile Core Kernel C Logic from src/
+echo "[*] Compiling Kernel Core (src/main.c)..."
+# -Isrc/app tells GCC to find types.h and apps.h inside src/app/
+gcc -m16 -march=i386 -ffreestanding -fno-pic -fno-PIE -fno-stack-protector -nostdlib -Isrc/app -c src/main.c -o build/main_c.o
 
-gcc -m16 -march=i386 -ffreestanding -fno-pic -fno-PIE -fno-stack-protector -nostdlib -c src/main.c -o build/main_c.o
-# 4. Link everything together without needing an external linker.ld file
-echo "[*] Linking Iridium Alloy into flat kernel binary..."
-# Forced origin positioning at 0x0 inside the 0x1000 segment execution scope
-ld -m elf_i386 -Ttext 0x0 --oformat binary build/kernel_asm.o build/main_c.o -o build/kernel.bin
+# 4. Automatically discover and compile all modular files inside src/app/
+echo "[*] Compiling application modules from src/app/..."
+APP_OBJECTS=""
 
-# 5. Combine and Pad into build/iridium.img
-echo "[*] Synthesizing floppy disk image (build/iridium.img)..."
-cat build/boot.bin build/kernel.bin > build/combined.tmp
+for c_file in src/app/*.c; do
+    base_name=$(basename "$c_file" .c)
+    echo "    -> Compiling Module: $base_name.c"
+    
+    # -Isrc/app allows application C files to find apps.h and types.h in their own folder
+    gcc -m16 -march=i386 -ffreestanding -fno-pic -fno-PIE -fno-stack-protector -nostdlib -Isrc/app -c "$c_file" -o "build/app/${base_name}.o"
+    APP_OBJECTS="$APP_OBJECTS build/app/${base_name}.o"
+done
 
-# Create a blank 1.44MB template in the build folder
-dd if=/dev/zero of=build/iridium.img bs=1024 count=1440 status=none
-# Inject our code into the template
-dd if=build/combined.tmp of=build/iridium.img conv=notrunc status=none
-truncate -s 1440k build/iridium.img
+# 5. Link everything together using parent-directory linker.ld script
+echo "[*] Linking Iridium via linker.ld into flat kernel binary..."
+ld -m elf_i386 -T linker.ld build/kernel_asm.o build/main_c.o $APP_OBJECTS -o build/kernel.bin
 
-# Clean up intermediate files
-rm build/combined.tmp
+# 6. Combine and Pad into build/iridium.img
+echo "[*] Synthesizing final floppy disk image..."
+cat build/boot.bin build/kernel.bin > build/iridium.img
 
-echo "[+] Success! Compiled image generated as 'build/iridium.img'"
+# Ensure it fits a standard 1.44MB floppy
+truncate -s 1474560 build/iridium.img
+echo "[+] Build complete: build/iridium.img created successfully!"
 echo "----------------------------------------------"
 
-# 6. Interactive QEMU Emulation Selection
-read -p "Would you like to test Iridium OS in QEMU right now? (y/N): " run_qemu
+# 7. QEMU test 
+read -p "Would you like to test IridiumOS in QEMU right now? (y/N): " run_qemu
 if [[ "$run_qemu" =~ ^[Yy]$ ]]; then
     echo "[*] Launching QEMU..."
     qemu-system-i386 -fda build/iridium.img
@@ -51,7 +57,7 @@ fi
 
 echo "----------------------------------------------"
 
-# 7. Interactive Physical Floppy Disk Burner
+# 8. Floppy Disk Burner
 read -p "Would you like to write this build to a physical floppy disk? (y/N): " write_floppy
 if [[ "$write_floppy" =~ ^[Yy]$ ]]; then
     echo ""
@@ -74,11 +80,9 @@ if [[ "$write_floppy" =~ ^[Yy]$ ]]; then
             sync
             echo "[+] Flash complete!"
         else
-            echo "[-] Floppy write aborted safely."
+            echo "[-] Floppy write aborted safely..."
         fi
     else
-        echo "[-] Error: '$floppy_dev' is not a valid block device. Aborting."
+        echo "ERR: $floppy_dev is not a valid block device."
     fi
 fi
-
-echo "----------------------------------------------"

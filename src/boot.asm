@@ -70,7 +70,7 @@ boot_start:
 
     jmp dsk_err         ; Jump if carry flag is set (error)
 
-.success
+.success:
     ; Jump to Stage 2 / Kernel!
     pop di
     jmp 0x1000:0x0000
