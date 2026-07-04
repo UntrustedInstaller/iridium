@@ -3,24 +3,31 @@ __asm__(".code16gcc\n");
 
 extern uint8_t cur_col;
 
+static const uint8_t theme_colors[] = {0x1F, 0x02, 0x06, 0x04, 0x0F};
+
 void cmd_theme(const char* args) {
-    // args will point exactly to the character after "theme "
     if (!args || args[0] == '\0') {
         print_str("ERR: Select theme 0-4\r\n");
         return;
     }
 
     char choice = args[0];
-    if (choice == '0')      cur_col = 0x1F; // White on Blue
-    else if (choice == '1') cur_col = 0x02; // Green on Black
-    else if (choice == '2') cur_col = 0x06; // Amber on Black
-    else if (choice == '3') cur_col = 0x04; // Red on Black
-    else if (choice == '4') cur_col = 0x0F; // White on Black
+    uint8_t num;
+    if (choice == '0')      { num = 0; cur_col = theme_colors[0]; }
+    else if (choice == '1') { num = 1; cur_col = theme_colors[1]; }
+    else if (choice == '2') { num = 2; cur_col = theme_colors[2]; }
+    else if (choice == '3') { num = 3; cur_col = theme_colors[3]; }
+    else if (choice == '4') { num = 4; cur_col = theme_colors[4]; }
     else {
         print_str("ERR: Select theme 0-4\r\n");
         return;
     }
-    
+
+    uint8_t config[512];
+    for (int i = 0; i < 512; i++) config[i] = 0;
+    config[0] = num;
+    write_sector(CONFIG_SECTOR, config);
+
     clear_screen();
     print_str("IridiumOS -- Osmium's periodic neighbor.\r\n");
     print_int(get_mem_size());

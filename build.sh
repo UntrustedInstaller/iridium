@@ -45,6 +45,11 @@ cat build/boot.bin build/kernel.bin > build/iridium.img
 
 # Ensure it fits a standard 1.44MB floppy
 truncate -s 1474560 build/iridium.img
+
+# Initialize config sector (LBA 50) with default theme 0 (0x1F)
+printf '\x1f' | dd of=build/iridium.img bs=512 seek=50 count=1 conv=notrunc status=none 2>/dev/null
+echo "[+] Config sector initialized at LBA 50 with default theme."
+
 echo "[+] Build complete: build/iridium.img created successfully!"
 echo "----------------------------------------------"
 

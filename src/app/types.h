@@ -18,4 +18,13 @@ void hexdump(const void* addr, int count);
 int strcmp(const char* s1, const char* s2);
 int strncmp(const char* s1, const char* s2, int n);
 
+void gotoxy(uint8_t col, uint8_t row);
+uint8_t read_sector(uint16_t lba, void* buffer);
+uint8_t write_sector(uint16_t lba, void* buffer);
+
+#define CONFIG_SECTOR 50
+#define EDITOR_SECTOR 51
+#define EDITOR_SECTORS 8
+#define EDITOR_MAX_SIZE (EDITOR_SECTORS * 512)
+
 #endif

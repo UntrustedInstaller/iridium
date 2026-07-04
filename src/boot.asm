@@ -39,39 +39,47 @@ boot_start:
     mov ah, 0x00
     int 0x13
 
-    mov di, 3           ; 3 attempts to boot, if fail, set the carry flag
+    mov di, 3           ; 3 attempts to boot
 
 .read_loop:
-    push di             ; Save the attempt counter
-    
-; Read Stage 2 from disk
-    mov ah, 0x02        ; BIOS read sectors function
-    mov al, 17          ; Only read the rest of track 0 (17 sectors)
-    mov ch, 0           ; Cylinder 0
-    mov cl, 2           ; Sector 2
-    mov dh, 0           ; Head 0
-    ; dl is automatically set to the boot drive number by the BIOS on startup
+    push di             ; Save attempt counter
 
-    ; Set destination buffer to 0x1000:0x0000
+    ; Set destination buffer segment once
     mov bx, 0x1000
     mov es, bx
-    mov bx, 0x0000
+    xor bx, bx          ; ES:BX = 0x1000:0x0000
+
+    ; Read head 0, sectors 2-18 (17 sectors)
+    mov ah, 0x02
+    mov al, 17
+    mov ch, 0
+    mov cl, 2
+    mov dh, 0
+    ; dl set by BIOS on boot
     int 0x13
-    
-    jnc .success        ; No carry flag? carry on!
-    
-    ; If at first you don't succeed, try try again!
-    xor ax, ax
+    jc .read_fail
+
+    ; Read head 1, sectors 1-18 (18 sectors) into 0x1000:0x2200
+    mov ah, 0x02
+    mov al, 18
+    mov ch, 0
+    mov cl, 1
+    mov dh, 1
+    mov bx, 0x2200      ; Buffer after first 17 sectors (17*512 = 0x2200)
+    int 0x13
+    jnc .success        ; Both reads succeeded!
+
+.read_fail:
+    xor ax, ax          ; Reset disk
     int 0x13
 
     pop di
     dec di
     jnz .read_loop
 
-    jmp dsk_err         ; Jump if carry flag is set (error)
+    jmp dsk_err
 
 .success:
-    ; Jump to Stage 2 / Kernel!
     pop di
     jmp 0x1000:0x0000
 

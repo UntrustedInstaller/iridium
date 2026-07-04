@@ -9,6 +9,7 @@ typedef void (*cmd_func_t)(const char* args);
 
 struct cli_command { 
     const char* name;
+    uint8_t name_len;
     cmd_func_t function;
     const char* description;
 };
@@ -22,5 +23,9 @@ void cmd_echo(const char* args);
 void cmd_theme(const char* args);
 void cmd_palette(const char* args);
 void cmd_reboot(const char* args);
+void cmd_edit(const char* args);
+void cmd_date(const char* args);
+void cmd_cpuinfo(const char* args);
+void cmd_poweroff(const char* args);
 
 #endif

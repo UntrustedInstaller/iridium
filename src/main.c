@@ -5,47 +5,24 @@ __asm__(".code16gcc\n");
 #include "app/apps.h"
 
 uint8_t cur_col = 0x1F;
+extern uint8_t boot_drive;
 
-
-// =====================================================================
-//  COMMAND TABLE
-// =====================================================================
-static const struct cli_command cmd_table[] = {
-    {"help",    cmd_help,    "Show a list of system commands"},
-    {"clear",   cmd_clear,   "Clear the terminal interface"},
-    {"mem",     cmd_mem,     "Check how much RAM is available"},
-    {"hexdump", cmd_hexdump, "Dump 128 bytes of system memory"},
-    {"echo",    cmd_echo,    "Repeat user input to terminal"},
-    {"theme",   cmd_theme,   "Quick change color scheme (0-4)"},
-    {"palette", cmd_palette, "Render the 16-color palette"},
-    {"reboot",  cmd_reboot,  "Soft reboot the machine"}
-};
-
-#define CMD_COUNT (sizeof(cmd_table) / sizeof(struct cli_command))
-
-// Dynamic documentation viewer!
-void cmd_help(const char* args) {
-    print_str("AVAILABLE COMMANDS:\r\n");
-    for (int i = 0; i < CMD_COUNT; i++) {
-        print_str("  ");
-        print_str(cmd_table[i].name);
-        
-        // Dynamic tpadding
-        int len = 0;
-        while(cmd_table[i].name[len]) len++;
-        for(int s = 0; s < (10 - len); s++) print_char(' ');
-        
-        print_str(" - ");
-        print_str(cmd_table[i].description);
-        print_str("\r\n");
-    }
-}
+#define CONFIG_SECTOR 50
+#define EDITOR_SECTOR 51
+#define EDITOR_SECTORS 8
+#define EDITOR_MAX_SIZE (EDITOR_SECTORS * 512)
 
 // =====================================================================
-//  HARDWARE ABSTRACTION LAYER 
+//  HARDWARE ABSTRACTION LAYER
 // =====================================================================
 void outb(uint16_t port, uint8_t val) {
     __asm__ __volatile__ ("outb %0, %1" : : "a"(val), "Nd"(port));
+}
+
+uint8_t inb(uint16_t port) {
+    uint8_t val;
+    __asm__ __volatile__ ("inb %1, %0" : "=a"(val) : "Nd"(port));
+    return val;
 }
 
 void print_str(const char* str) {
@@ -56,21 +33,26 @@ void print_char(char c) {
     __asm__ __volatile__ ("call asm_print_char" : : "a"(c) : "ebx");
 }
 
-void print_pal_block(char c1, char c2, uint8_t color) {
-    register uint32_t char1 __asm__("eax") = c1;
-    register uint32_t char2 __asm__("ecx") = c2;
-    register uint32_t attrib __asm__("ebx") = color;
-
+static void pal_char(char c, uint8_t color) {
     __asm__ __volatile__ (
-        "pushw %%cx\n\t"
-        "movb $0x09, %%ah\n\t" "movb $0, %%bh\n\t" "movb %%bl, %%bl\n\t" "movw $1, %%cx\n\t" "int $0x10\n\t"
-        "movb $0x03, %%ah\n\t" "int $0x10\n\t" "incb %%dl\n\t" "movb $0x02, %%ah\n\t" "int $0x10\n\t"
-        "popw %%cx\n\t"          
-        "movb $0x09, %%ah\n\t" "movb %%cl, %%al\n\t" "pushw %%cx\n\t" "movw $1, %%cx\n\t" "int $0x10\n\t"
-        "movb $0x03, %%ah\n\t" "int $0x10\n\t" "incb %%dl\n\t" "movb $0x02, %%ah\n\t" "int $0x10\n\t"
-        "popw %%cx\n\t"          
-        : : "r"(char1), "r"(char2), "r"(attrib) : "edx", "memory"
+        "movb $0x09, %%ah\n\t"
+        "movb $0x00, %%bh\n\t"
+        "movw $1, %%cx\n\t"
+        "int $0x10\n\t"
+        "movb $0x03, %%ah\n\t"
+        "int $0x10\n\t"
+        "incb %%dl\n\t"
+        "movb $0x02, %%ah\n\t"
+        "int $0x10\n\t"
+        :
+        : "a"((uint8_t)c), "b"((0x00 << 8) | color)
+        : "ecx", "edx", "memory"
     );
+}
+
+void print_pal_block(char c1, char c2, uint8_t color) {
+    pal_char(c1, color);
+    pal_char(c2, color);
 }
 
 uint16_t get_key(void) {
@@ -87,6 +69,81 @@ uint16_t get_mem_size(void) {
 
 void clear_screen(void) {
     __asm__ __volatile__ ("call cls" : : : "eax", "ebx", "ecx", "edx");
+}
+
+void gotoxy(uint8_t col, uint8_t row) {
+    __asm__ __volatile__ (
+        "movb $0x02, %%ah\n\tmovb $0x00, %%bh\n\tint $0x10"
+        : : "d"((row << 8) | col) : "eax"
+    );
+}
+
+void get_cursor_rc(uint8_t* row, uint8_t* col) {
+    uint16_t pos;
+    __asm__ __volatile__ (
+        "movb $0x03, %%ah\n\tmovb $0x00, %%bh\n\tint $0x10"
+        : "=d"(pos)
+        : : "eax", "ecx"
+    );
+    *col = pos & 0xFF;
+    *row = (pos >> 8) & 0xFF;
+}
+
+uint8_t read_sector(uint16_t lba, void* buffer) {
+    uint16_t result;
+    __asm__ __volatile__ (
+        "call asm_read_sector"
+        : "=a"(result)
+        : "a"(lba), "b"(buffer)
+        : "ecx", "edx", "memory"
+    );
+    return (uint8_t)result;
+}
+
+uint8_t write_sector(uint16_t lba, void* buffer) {
+    uint16_t result;
+    __asm__ __volatile__ (
+        "call asm_write_sector"
+        : "=a"(result)
+        : "a"(lba), "b"(buffer)
+        : "ecx", "edx", "memory"
+    );
+    return (uint8_t)result;
+}
+
+// =====================================================================
+//  BOOT CHIME
+// =====================================================================
+static void play_note(uint16_t freq, uint16_t ms) {
+    if (freq < 20) {
+        outb(0x61, inb(0x61) & 0xFC);
+        return;
+    }
+
+    uint16_t div = 1193182 / freq;
+
+    outb(0x43, 0xB6);
+    outb(0x42, div & 0xFF);
+    outb(0x42, div >> 8);
+
+    outb(0x61, (inb(0x61) & 0xFC) | 0x03);
+
+    uint32_t us = (uint32_t)ms * 1000;
+    __asm__ __volatile__ (
+        "movb $0x86, %%ah\n\tint $0x15"
+        : : "c"((uint16_t)(us >> 16)), "d"((uint16_t)(us & 0xFFFF))
+        : "eax"
+    );
+
+    outb(0x61, inb(0x61) & 0xFC);
+}
+
+static void boot_chime(void) {
+    play_note(262, 130);  // C4
+    play_note(330, 130);  // E4
+    play_note(392, 130);  // G4
+    play_note(494, 130);  // B4
+    play_note(587, 300);  // D5
 }
 
 // =====================================================================
@@ -114,8 +171,8 @@ void render_pal_mtx(void) {
     static const char hex_chars[] = "0123456789ABCDEF";
     uint8_t old_theme_col = cur_col;
     for (int i = 0; i < 16; i++) {
-        uint8_t attrib = (i << 4) | 0x0F; 
-        cur_col = attrib; 
+        uint8_t attrib = (i << 4) | 0x0F;
+        cur_col = attrib;
         print_pal_block(hex_chars[i], hex_chars[i], attrib);
     }
     print_pal_block(' ', ' ', old_theme_col);
@@ -147,75 +204,327 @@ void hexdump(const void* addr, int count) {
             if (i + j < count) {
                 uint8_t ch = ptr[i + j];
                 if (ch >= 32 && ch <= 126) print_char((char)ch);
-                else print_char('.'); 
+                else print_char('.');
             } else print_char(' ');
         }
         print_str("|\r\n");
-    } 
+    }
+}
+
+// =====================================================================
+//  THEME PERSISTENCE
+// =====================================================================
+static const uint8_t theme_colors[] = {0x1F, 0x02, 0x06, 0x04, 0x0F};
+
+void load_theme(void) {
+    static uint8_t config[512];
+
+    if (read_sector(CONFIG_SECTOR, config) != 0) return;
+
+    uint8_t theme_num = config[0];
+    if (theme_num > 4) return;
+    cur_col = theme_colors[theme_num];
+}
+
+// =====================================================================
+//  COMMAND TABLE
+// =====================================================================
+static const struct cli_command cmd_table[] = {
+    {"help",     4, cmd_help,    "Show a list of system commands"},
+    {"clear",    5, cmd_clear,   "Clear the terminal interface"},
+    {"echo",     4, cmd_echo,    "Repeat user input to terminal"},
+
+    {"mem",      3, cmd_mem,     "Check how much RAM is available"},
+    {"hexdump",  7, cmd_hexdump, "Dump 128 bytes of system memory"},
+    {"cpuinfo",  7, cmd_cpuinfo, "Display CPU vendor and features"},
+    {"date",     4, cmd_date,    "Show the current date and time"},
+
+    {"palette",  7, cmd_palette, "Render the 16-color palette"},
+    {"theme",    5, cmd_theme,   "Quick change color scheme (0-4)"},
+
+    {"edit",     4, cmd_edit,    "Launch the primitive text editor"},
+
+    {"reboot",   6, cmd_reboot,  "Soft reboot the machine"},
+    {"poweroff", 8, cmd_poweroff,"Shut down the system via APM"},
+};
+
+#define CMD_COUNT (sizeof(cmd_table) / sizeof(struct cli_command))
+
+static const uint8_t help_breaks[] = {2, 6, 8, 9};
+
+void cmd_help(const char* args) {
+    print_str("AVAILABLE COMMANDS:\r\n");
+    for (int i = 0; i < CMD_COUNT; i++) {
+        print_str("  ");
+        print_str(cmd_table[i].name);
+        for (int s = 0; s < (10 - cmd_table[i].name_len); s++) print_char(' ');
+        print_str(" - ");
+        print_str(cmd_table[i].description);
+        print_str("\r\n");
+        for (int b = 0; b < (int)(sizeof(help_breaks)/sizeof(help_breaks[0])); b++)
+            if (i == help_breaks[b]) { print_str("\r\n"); break; }
+    }
+}
+
+// =====================================================================
+//  SHELL COMMAND-LINE REDRAW
+// =====================================================================
+#define HIST_SIZE 5
+#define CMD_MAX 63
+
+static void flash_red(void) {
+    play_note(1000, 30);
+
+    uint8_t row, col;
+    get_cursor_rc(&row, &col);
+
+    uint16_t char_attr;
+    __asm__ __volatile__ (
+        "movb $0x08, %%ah\n\t"
+        "movb $0x00, %%bh\n\t"
+        "int $0x10\n\t"
+        : "=a"(char_attr)
+        :
+        : "ebx"
+    );
+
+    __asm__ __volatile__ (
+        "movb $0x09, %%ah\n\t"
+        "movb $0x00, %%bh\n\t"
+        "movw $1, %%cx\n\t"
+        "int $0x10\n\t"
+        :
+        : "a"((0x09 << 8) | 0xDB), "b"((0x00 << 8) | 0xCC)
+        : "ecx"
+    );
+
+    uint32_t us = 30000;
+    __asm__ __volatile__ (
+        "movb $0x86, %%ah\n\tint $0x15"
+        :
+        : "c"((uint16_t)(us >> 16)), "d"((uint16_t)(us & 0xFFFF))
+        : "eax"
+    );
+
+    __asm__ __volatile__ (
+        "movb $0x09, %%ah\n\t"
+        "movb $0x00, %%bh\n\t"
+        "movw $1, %%cx\n\t"
+        "int $0x10\n\t"
+        :
+        : "a"((0x09 << 8) | (char_attr & 0xFF)), "b"((0x00 << 8) | ((char_attr >> 8) & 0xFF))
+        : "ecx"
+    );
+}
+
+static void redraw_cmdline(uint8_t srow, const char* buf, int len, int pos) {
+    gotoxy(0, srow);
+    print_str("OS:>");
+    for (int i = 0; i < len; i++) print_char(buf[i]);
+
+    int remain = 80 - (4 + len);
+    if (remain > 0) {
+        uint8_t attr = cur_col;
+        __asm__ __volatile__ (
+            "movb $0x09, %%ah\n\t"
+            "movb $0x00, %%bh\n\t"
+            "int $0x10\n\t"
+            :
+            : "a"((0x09 << 8) | ' '), "b"((0x00 << 8) | attr), "c"((uint16_t)remain)
+            : "memory"
+        );
+    }
+
+    gotoxy(4 + pos, srow);
+}
+
+static void buf_insert(char* buf, int* len, int* pos, char c) {
+    if (*len >= CMD_MAX) return;
+    for (int i = *len; i > *pos; i--) buf[i] = buf[i - 1];
+    buf[*pos] = c;
+    (*len)++;
+    (*pos)++;
+}
+
+static void buf_delete(char* buf, int* len, int* pos) {
+    if (*pos <= 0) return;
+    for (int i = *pos - 1; i < *len; i++) buf[i] = buf[i + 1];
+    (*len)--;
+    (*pos)--;
+}
+
+static void buf_delete_at(char* buf, int* len, int* pos) {
+    if (*pos >= *len) return;
+    for (int i = *pos; i < *len; i++) buf[i] = buf[i + 1];
+    (*len)--;
 }
 
 // =====================================================================
 //  IRIDIUM SHELL
 // =====================================================================
 void iridium_main() {
+    boot_chime();
+    load_theme();
     clear_screen();
     print_str("IridiumOS -- Osmium's periodic neighbor.\r\n");
     print_int(get_mem_size());
     print_str("KB RAM available.\r\n");
+
     render_pal_mtx();
     print_str("\r\n");
 
-    char cmd_buf[64];
-    int cmd_idx = 0;
+    char cmd_buf[CMD_MAX + 1];
+    int cmd_idx, cur_pos;
+
+    char history[HIST_SIZE][CMD_MAX + 1];
+    int hist_count = 0;
+    int hist_next = 0;
+    char hist_temp[CMD_MAX + 1];
+    int hist_cur = -1;
 
     while (1) {
-        print_str("OS:>");
+        cmd_buf[0] = '\0';
         cmd_idx = 0;
-        for (int i = 0; i < 64; i++) cmd_buf[i] = '\0';
+        cur_pos = 0;
+
+        print_str("OS:>");
+
+        uint8_t shell_row, shell_col;
+        get_cursor_rc(&shell_row, &shell_col);
 
         while (1) {
             uint16_t key = get_key();
             uint8_t ascii = key & 0xFF;
+            uint8_t scan = (key >> 8) & 0xFF;
 
-            if (ascii == 13) { 
+            if (ascii == 13) {
                 print_str("\r\n");
                 cmd_buf[cmd_idx] = '\0';
                 break;
             }
-            else if (ascii == 8) { 
-                if (cmd_idx > 0) {
-                    cmd_idx--;
+            else if (ascii == 8) {
+                if (cur_pos > 0) {
+                    buf_delete(cmd_buf, &cmd_idx, &cur_pos);
+                    redraw_cmdline(shell_row, cmd_buf, cmd_idx, cur_pos);
+                }
+            }
+            else if (ascii == 0) {
+                if (scan == 0x48) {
+                    if (hist_count == 0) continue;
+                    if (hist_cur == -1) {
+                        int i = 0;
+                        while (i < cmd_idx && i < CMD_MAX) {
+                            hist_temp[i] = cmd_buf[i];
+                            i++;
+                        }
+                        hist_temp[i] = '\0';
+                        hist_cur = 0;
+                    } else if (hist_cur < hist_count - 1) {
+                        hist_cur++;
+                    } else continue;
+
+                    int idx = (hist_next - 1 - hist_cur + HIST_SIZE) % HIST_SIZE;
+                    int i = 0;
+                    while (history[idx][i] && i < CMD_MAX) {
+                        cmd_buf[i] = history[idx][i];
+                        i++;
+                    }
+                    cmd_idx = i;
+                    cur_pos = cmd_idx;
                     cmd_buf[cmd_idx] = '\0';
-                    print_char(8); print_char(' '); print_char(8);
+                    redraw_cmdline(shell_row, cmd_buf, cmd_idx, cur_pos);
+                }
+                else if (scan == 0x50) {
+                    if (hist_cur == -1) continue;
+                    if (hist_cur == 0) {
+                        hist_cur = -1;
+                        int i = 0;
+                        while (hist_temp[i] && i < CMD_MAX) {
+                            cmd_buf[i] = hist_temp[i];
+                            i++;
+                        }
+                        cmd_idx = i;
+                        cur_pos = cmd_idx;
+                        cmd_buf[cmd_idx] = '\0';
+                        redraw_cmdline(shell_row, cmd_buf, cmd_idx, cur_pos);
+                    } else {
+                        hist_cur--;
+                        int idx = (hist_next - 1 - hist_cur + HIST_SIZE) % HIST_SIZE;
+                        int i = 0;
+                        while (history[idx][i] && i < CMD_MAX) {
+                            cmd_buf[i] = history[idx][i];
+                            i++;
+                        }
+                        cmd_idx = i;
+                        cur_pos = cmd_idx;
+                        cmd_buf[cmd_idx] = '\0';
+                        redraw_cmdline(shell_row, cmd_buf, cmd_idx, cur_pos);
+                    }
+                }
+                else if (scan == 0x4B) {
+                    if (cur_pos > 0) {
+                        cur_pos--;
+                        gotoxy(4 + cur_pos, shell_row);
+                    }
+                }
+                else if (scan == 0x4D) {
+                    if (cur_pos < cmd_idx) {
+                        cur_pos++;
+                        gotoxy(4 + cur_pos, shell_row);
+                    }
+                }
+                else if (scan == 0x47) {
+                    cur_pos = 0;
+                    gotoxy(4, shell_row);
+                }
+                else if (scan == 0x4F) {
+                    cur_pos = cmd_idx;
+                    gotoxy(4 + cur_pos, shell_row);
+                }
+                else if (scan == 0x53) {
+                    if (cur_pos < cmd_idx) {
+                        buf_delete_at(cmd_buf, &cmd_idx, &cur_pos);
+                        redraw_cmdline(shell_row, cmd_buf, cmd_idx, cur_pos);
+                    }
                 }
             }
             else if (ascii >= 32 && ascii <= 126) {
-                if (cmd_idx < 63) {
-                    cmd_buf[cmd_idx++] = ascii;
-                    print_char(ascii);
+                if (cmd_idx < CMD_MAX) {
+                    buf_insert(cmd_buf, &cmd_idx, &cur_pos, (char)ascii);
+                    redraw_cmdline(shell_row, cmd_buf, cmd_idx, cur_pos);
+                } else {
+                    flash_red();
                 }
             }
         }
 
-        if (cmd_idx == 0) continue; 
+        if (cmd_idx == 0) {
+            hist_cur = -1;
+            continue;
+        }
 
-        // =================================================================
-        //  AUTOMATED DISPATCH MECHANISM
-        // =================================================================
+        if (hist_count == 0 || strcmp(cmd_buf, history[(hist_next - 1 + HIST_SIZE) % HIST_SIZE]) != 0) {
+            int i = 0;
+            while (cmd_buf[i] && i < CMD_MAX) {
+                history[hist_next][i] = cmd_buf[i];
+                i++;
+            }
+            history[hist_next][i] = '\0';
+            hist_next = (hist_next + 1) % HIST_SIZE;
+            if (hist_count < HIST_SIZE) hist_count++;
+        }
+
         int command_executed = 0;
-
         for (int i = 0; i < CMD_COUNT; i++) {
-            int name_len = 0;
-            while (cmd_table[i].name[name_len]) name_len++;
+            uint8_t name_len = cmd_table[i].name_len;
 
-            // Precise string checking for clean parsing execution
             if (strcmp(cmd_buf, cmd_table[i].name) == 0) {
-                cmd_table[i].function(""); 
+                cmd_table[i].function("");
                 command_executed = 1;
                 break;
-            } 
+            }
             else if (strncmp(cmd_buf, cmd_table[i].name, name_len) == 0 && cmd_buf[name_len] == ' ') {
-                cmd_table[i].function(cmd_buf + name_len + 1); 
+                cmd_table[i].function(cmd_buf + name_len + 1);
                 command_executed = 1;
                 break;
             }
@@ -224,5 +533,7 @@ void iridium_main() {
         if (!command_executed) {
             print_str("ERR: Unknown shell command. Type 'help'\r\n");
         }
+
+        hist_cur = -1;
     }
 }
