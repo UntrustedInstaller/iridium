@@ -70,7 +70,7 @@ static void ed_render_line(int r, int* p) {
 
 static void ed_render_status(void) {
     gotoxy(0, 0);
-    print_str("IRIDIUM TEXT EDITOR");
+    print_str("TEXT EDITOR");
     if (ed_modified) {
         gotoxy(28, 0);
         print_str("[Modified]");

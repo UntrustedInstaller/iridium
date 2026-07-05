@@ -2,7 +2,7 @@
 set -e
 
 echo "=============================================="
-echo "               IRIDIUM BUILDER                "
+echo "               OSMIUM BUILDER                "
 echo "=============================================="
 
 # Ensure clean build workspaces exist
@@ -51,21 +51,21 @@ for c_file in src/app/*.c; do
 done
 
 # 5. Link everything together using parent-directory linker.ld script
-echo "[*] Linking Iridium via linker.ld into flat kernel binary..."
+echo "[*] Linking kernel..."
 ld -m elf_i386 -T linker.ld build/kernel_asm.o build/main_c.o build/fs.o $APP_OBJECTS -o build/kernel.bin
 
-# 7. Combine and Pad into build/iridium.img
+# 7. Combine and Pad into build/os.img
 echo "[*] Synthesizing final floppy disk image..."
-cat build/boot.bin build/kernel.bin > build/iridium.img
+cat build/boot.bin build/kernel.bin > build/os.img
 
 # Ensure it fits a standard 1.44MB floppy
-truncate -s 1474560 build/iridium.img
+truncate -s 1474560 build/os.img
 
 # Create a real FAT12 filesystem on the floppy image using mtools.
 # -B uses our boot sector as template (keeps boot code),
 # mformat updates the BPB fields to match the geometry below.
 echo "[*] Creating FAT12 filesystem with mformat..."
-mformat -i build/iridium.img -B build/boot.bin -R 73 -h 2 -t 80 -s 18 -c 1 :: 2>/dev/null
+mformat -i build/os.img -B build/boot.bin -R 73 -h 2 -t 80 -s 18 -c 1 :: 2>/dev/null
 echo "[+] FAT12 filesystem created (72 reserved, 2 FATs, 224 root entries)."
 
 # 8. Build loadable modules
@@ -93,20 +93,20 @@ printf '\x1f' > build/config.bin
 # Default BF "Hello World" program
 printf '%s' '++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.' > build/hello.bf
 
-mcopy -i build/iridium.img build/config.bin ::CONFIG.BIN  2>/dev/null
-mcopy -i build/iridium.img build/hello.bf  ::HELLO.BF     2>/dev/null
-mcopy -i build/iridium.img build/snake.mod ::SNAKE.BIN    2>/dev/null
+mcopy -i build/os.img build/config.bin ::CONFIG.BIN  2>/dev/null
+mcopy -i build/os.img build/hello.bf  ::HELLO.BF     2>/dev/null
+mcopy -i build/os.img build/snake.mod ::SNAKE.BIN    2>/dev/null
 
 echo "[+] Files seeded: CONFIG.BIN, HELLO.BF, SNAKE.BIN"
 
-echo "[+] Build complete: build/iridium.img created successfully!"
+echo "[+] Build complete: build/os.img created successfully!"
 echo "----------------------------------------------"
 
 # 7. QEMU test 
-read -p "Would you like to test IridiumOS in QEMU right now? (y/N): " run_qemu
+read -p "Would you like to test OsmiumOS in QEMU right now? (y/N): " run_qemu
 if [[ "$run_qemu" =~ ^[Yy]$ ]]; then
     echo "[*] Launching QEMU..."
-    qemu-system-i386 -fda build/iridium.img
+    qemu-system-i386 -fda build/os.img
 fi
 
 echo "----------------------------------------------"
@@ -130,7 +130,7 @@ if [[ "$write_floppy" =~ ^[Yy]$ ]]; then
         
         if [[ "$confirm" =~ ^[Yy]$ ]]; then
             echo "[*] Writing to disk..."
-            sudo dd if=build/iridium.img of="$floppy_dev" bs=512 status=progress
+            sudo dd if=build/os.img of="$floppy_dev" bs=512 status=progress
             sync
             echo "[+] Flash complete!"
         else

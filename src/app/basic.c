@@ -405,7 +405,7 @@ void cmd_basic(const char* args) {
     }
     
     // Entry banner
-    print_str("IRIDIUM TINYBASIC\r\n");
+    print_str("TINYBASIC\r\n");
     
     // REPL
     char line[MAX_LINE];

@@ -90,7 +90,7 @@ void cmd_about(const char* args) {
 
     draw_border(bcols[0]);
 
-    puts_at(34, 2, "IRIDIUM OS", ATTR(15, 0));
+    puts_at(34, 2, "OSMIUM OS", ATTR(15, 0));
 
     for (i = 0; i < 10; i++)
         putc_at(34 + i, 3, 0xC4, ATTR(8, 0));

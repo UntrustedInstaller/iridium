@@ -512,7 +512,7 @@ void iridium_main() {
     fs_init();
     load_theme();
     clear_screen();
-    print_str("IridiumOS -- Osmium's periodic neighbor.\r\n");
+    print_str("OsmiumOS\r\n");
     print_int(get_mem_size());
     print_str("KB RAM available.\r\n");
 
