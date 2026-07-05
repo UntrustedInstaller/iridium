@@ -2,7 +2,7 @@ __asm__(".code16gcc\n");
 #include "apps.h"
 #include "fs.h"
 
-#define TAPE_SIZE 2048
+#define TAPE_SIZE 1024
 
 static unsigned char tape[TAPE_SIZE];
 static int ptr;

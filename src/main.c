@@ -300,48 +300,58 @@ void load_theme(void) {
 //  COMMAND TABLE
 // =====================================================================
 static const struct cli_command cmd_table[] = {
-    {"help",     4, cmd_help,    "Show a list of system commands"},
-    {"clear",    5, cmd_clear,   "Clear the terminal interface"},
-    {"echo",     4, cmd_echo,    "Repeat user input to terminal"},
+    // ---- General ----
+    {"help",     4, cmd_help,    "List all commands"},
+    {"clear",    5, cmd_clear,   "Clear the screen"},
+    {"echo",     4, cmd_echo,    "Repeat user input"},
+    {"date",     4, cmd_date,    "Show date and time"},
+    {"mem",      3, cmd_mem,     "Show available RAM"},
+    {"hexdump",  7, cmd_hexdump, "Dump system memory"},
+    {"cpuinfo",  7, cmd_cpuinfo, "CPU vendor and features"},
+    {"about",    5, cmd_about,   "About this OS"},
 
-    {"mem",      3, cmd_mem,     "Check how much RAM is available"},
-    {"hexdump",  7, cmd_hexdump, "Dump 128 bytes of system memory"},
-    {"cpuinfo",  7, cmd_cpuinfo, "Display CPU vendor and features"},
-    {"date",     4, cmd_date,    "Show the current date and time"},
+    // ---- Files ----
+    {"ls",       2, cmd_ls,      "List files on disk"},
+    {"cat",      3, cmd_cat,     "View a text file"},
+    {"rm",       2, cmd_rm,      "Remove a file"},
 
-    {"palette",  7, cmd_palette, "Render the 16-color palette"},
-    {"theme",    5, cmd_theme,   "Quick change color scheme (0-4)"},
+    // ---- Apps ----
+    {"palette",  7, cmd_palette, "Show color palette"},
+    {"theme",    5, cmd_theme,   "Change color scheme"},
+    {"edit",     4, cmd_edit,    "Text editor"},
+    {"basic",    5, cmd_basic,   "BASIC interpreter"},
+    {"brainfuck", 9, cmd_bf,     "Run Brainfuck code"},
+    {"bfedit",   6, cmd_bfedit,  "Edit Brainfuck code"},
+    {"snake",    5, cmd_snake,   "Play Snake game"},
 
-    {"edit",     4, cmd_edit,    "Launch the primitive text editor"},
-    {"brainfuck", 9, cmd_bf,      "Execute a Brainfuck program (no args = saved)"},
-    {"bfedit",   6, cmd_bfedit,  "Edit and save a Brainfuck program to disk"},
-    {"snake",    5, cmd_snake,   "Play Snake in the terminal"},
-    {"basic",    5, cmd_basic,   "BASIC interpreter (Tiny BASIC)"},
-
-    {"reboot",   6, cmd_reboot,  "Soft reboot the machine"},
-    {"poweroff", 8, cmd_poweroff,"Shut down the system via APM"},
-
-    {"ls",       2, cmd_ls,      "List files in the root directory"},
-    {"cat",      3, cmd_cat,     "Display a file's contents"},
-    {"rm",       2, cmd_rm,      "Delete a file from disk"},
+    // ---- System ----
+    {"reboot",   6, cmd_reboot,  "Reboot the system"},
+    {"poweroff", 8, cmd_poweroff,"Shut down the system"},
 };
 
 #define CMD_COUNT (sizeof(cmd_table) / sizeof(struct cli_command))
 
-static const uint8_t help_breaks[] = {2, 6, 8, 12};
+static const uint8_t help_sections[] = {8, 11, 18};
+static const char* help_snames[] = {"General", "Files", "Apps", "System"};
 
 void cmd_help(const char* args) {
-    print_str("AVAILABLE COMMANDS:\r\n");
+    int si = 0;
+    print_str("  -- ");
+    print_str(help_snames[0]);
+    print_str(" --\r\n");
     for (int i = 0; i < CMD_COUNT; i++) {
-        if (cmd_table[i].description[0] == '\0') continue;
+        if (si < 3 && i == help_sections[si]) {
+            si++;
+            print_str("\r\n  -- ");
+            print_str(help_snames[si]);
+            print_str(" --\r\n");
+        }
         print_str("  ");
         print_str(cmd_table[i].name);
         for (int s = 0; s < (10 - cmd_table[i].name_len); s++) print_char(' ');
         print_str(" - ");
         print_str(cmd_table[i].description);
         print_str("\r\n");
-        for (int b = 0; b < (int)(sizeof(help_breaks)/sizeof(help_breaks[0])); b++)
-            if (i == help_breaks[b]) { print_str("\r\n"); break; }
     }
 }
 

@@ -5,13 +5,13 @@ __asm__(".code16gcc\n");
 // Tiny BASIC interpreter for Iridium
 // Based on Palo Alto Tiny BASIC (Li-Chen Wang, 1976)
 
-#define MAX_PROG 4096
+#define MAX_PROG 2048
 #define MAX_LINE 256
 #define NUM_VARS 26
 
 typedef short int16_t;
 static char program[MAX_PROG];
-static char load_buf[8192];
+static char load_buf[4096];
 static int prog_len;
 static int16_t vars[NUM_VARS];
 static int ip; // instruction pointer (index into program)

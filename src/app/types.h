@@ -32,7 +32,7 @@ uint8_t write_sector(uint16_t lba, void* buffer);
 #define BF_FILE "HELLO.BF"
 #define SNAKE_FILE "SNAKE.BIN"
 
-#define MODULE_SECTORS 8
+#define MODULE_SECTORS 4
 #define MODULE_LOAD_SEGMENT 0x2000
 #define MODULE_ARGS_OFFSET 0xFC00
 
