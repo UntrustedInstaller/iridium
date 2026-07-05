@@ -22,6 +22,7 @@ SECTIONS
         *(.data)
         *(.data.*)
     }
+    _kernel_end = .;
 
     .bss : SUBALIGN(2) {
         *(.bss)

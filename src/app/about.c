@@ -1,8 +1,9 @@
 __asm__(".code16gcc\n");
 #include "apps.h"
 
-#define VGA      ((volatile uint16_t*)0xB8000)
-#define CELL(c,a) ((uint16_t)(((a) << 8) | (uint8_t)(c)))
+extern uint8_t cur_col;
+extern char _kernel_end[];
+
 #define ATTR(f,b) ((uint8_t)((f) | ((b) << 4)))
 
 static void wait_ms(uint32_t ms) {
@@ -14,79 +15,113 @@ static void wait_ms(uint32_t ms) {
     );
 }
 
-static int kbhit(void) {
-    uint8_t ok;
-    __asm__ __volatile__ (
-        "movb $0x01, %%ah\n\tint $0x16\n\t"
-        "setnz %0"
-        : "=q"(ok)
-        : : "eax"
-    );
-    return ok;
+static void putc_at(uint8_t x, uint8_t y, char c, uint8_t attr) {
+    gotoxy(x, y);
+    cur_col = attr;
+    print_char(c);
 }
 
-static void rdkey(void) {
-    __asm__ __volatile__("movb $0x00, %%ah\n\tint $0x16" : : : "eax");
-}
-
-static void vga_puts(int x, int y, const char* s, uint8_t attr) {
-    while (*s)
-        VGA[y * 80 + x++] = CELL(*s++, attr);
+static void puts_at(uint8_t x, uint8_t y, const char* s, uint8_t attr) {
+    gotoxy(x, y);
+    cur_col = attr;
+    print_str(s);
 }
 
 static void draw_border(uint8_t fg) {
-    int x, y;
     uint8_t a = ATTR(fg, 0);
-    VGA[0]    = CELL(0xDA, a);
-    VGA[79]   = CELL(0xBF, a);
-    VGA[1920] = CELL(0xC0, a);
-    VGA[1999] = CELL(0xD9, a);
-    for (x = 1; x < 79; x++) {
-        VGA[x]      = CELL(0xC4, a);
-        VGA[1920+x] = CELL(0xC4, a);
+    int i;
+    putc_at(0, 0, 0xDA, a);
+    putc_at(79, 0, 0xBF, a);
+    putc_at(0, 24, 0xC0, a);
+    gotoxy(79, 24);
+    cur_col = a;
+    __asm__ __volatile__ (
+        "movb $0x09, %%ah\n\tmovb $0x00, %%bh\n\tmovw $1, %%cx\n\tint $0x10"
+        : : "a"(0xD9), "b"((uint16_t)a) : "cc"
+    );
+    for (i = 1; i < 79; i++) {
+        putc_at(i, 0, 0xC4, a);
+        putc_at(i, 24, 0xC4, a);
     }
-    for (y = 1; y < 24; y++) {
-        VGA[y*80]    = CELL(0xB3, a);
-        VGA[y*80+79] = CELL(0xB3, a);
+    for (i = 1; i < 24; i++) {
+        gotoxy(0, i);
+        cur_col = a;
+        __asm__ __volatile__ (
+            "movb $0x09, %%ah\n\tmovb $0x00, %%bh\n\tmovw $1, %%cx\n\tint $0x10"
+            : : "a"(0xB3), "b"((uint16_t)a) : "cc"
+        );
+        gotoxy(79, i);
+        __asm__ __volatile__ (
+            "movb $0x09, %%ah\n\tmovb $0x00, %%bh\n\tmovw $1, %%cx\n\tint $0x10"
+            : : "a"(0xB3), "b"((uint16_t)a) : "cc"
+        );
     }
 }
 
+static int u16_to_str(char* buf, uint16_t n) {
+    int i = 0;
+    if (n == 0) { buf[i++] = '0'; return i; }
+    char tmp[6];
+    int ti = 0;
+    while (n > 0) { tmp[ti++] = '0' + (n % 10); n /= 10; }
+    while (ti > 0) buf[i++] = tmp[--ti];
+    return i;
+}
+
 void cmd_about(const char* args) {
-    int y, x, i, tick = 0;
+    int i, tick = 0;
     uint16_t ram_kb;
     uint8_t pulse;
     int si, prev;
+    uint8_t r, c;
+    uint8_t saved_col = cur_col;
     static const char spinner[] = "|/-\\";
     static const uint8_t bcols[] = {9,11,13,15,14,12,10,8};
-    uint8_t r, c;
 
     get_cursor_rc(&r, &c);
 
-    for (y = 0; y < 25; y++)
-        for (x = 0; x < 80; x++)
-            VGA[y*80 + x] = CELL(' ', ATTR(0, 0));
+    __asm__ __volatile__ (
+        "movb $0x01, %%ah\n\tmovw $0x2000, %%cx\n\tint $0x10"
+        : : : "eax", "ecx"
+    );
+
+    cur_col = 0;
+    clear_screen();
 
     draw_border(bcols[0]);
 
-    static const char title[] = "IRIDIUM OS";
-    static const uint8_t tcols[] = {
-        ATTR(12,0), ATTR(14,0), ATTR(10,0), ATTR(11,0), ATTR(9,0),
-        ATTR(13,0), ATTR(15,0), ATTR(0,0),  ATTR(12,0), ATTR(14,0),
-    };
-    for (i = 0; i < 10; i++)
-        VGA[2*80 + 34 + i] = CELL(title[i], tcols[i]);
+    puts_at(34, 2, "IRIDIUM OS", ATTR(15, 0));
 
     for (i = 0; i < 10; i++)
-        VGA[3*80 + 34 + i] = CELL(0xC4, ATTR(8, 0));
+        putc_at(34 + i, 3, 0xC4, ATTR(8, 0));
 
-    static const char* labels[] = {"Version","Kernel","CPU","RAM","Build"};
-    for (i = 0; i < 5; i++) {
-        vga_puts(20, 6 + i, labels[i], ATTR(14, 0));
-        VGA[(6+i)*80 + 27] = CELL(':', ATTR(15, 0));
+    {
+        const char* labels[] = {"Version", "Kernel", "CPU", "RAM", "Build"};
+        for (i = 0; i < 5; i++) {
+            puts_at(20, 6 + i, labels[i], ATTR(14, 0));
+            putc_at(27, 6 + i, ':', ATTR(15, 0));
+        }
     }
 
-    vga_puts(29, 6, "Migration Milestone 3+",    ATTR(15, 0));
-    vga_puts(29, 7, "33 KB  (65 sectors, FAT12)", ATTR(15, 0));
+    puts_at(29, 6, "Migration Milestone 3+",    ATTR(15, 0));
+    {
+        uint16_t kb = (uint32_t)_kernel_end;
+        uint16_t kk = (kb + 1023) / 1024;
+        uint16_t ks = (kb + 511) / 512;
+        char kbuf[26];
+        int ki = 0;
+        ki += u16_to_str(kbuf + ki, kk);
+        kbuf[ki++] = ' '; kbuf[ki++] = 'K'; kbuf[ki++] = 'B';
+        kbuf[ki++] = ' '; kbuf[ki++] = '(';
+        ki += u16_to_str(kbuf + ki, ks);
+        kbuf[ki++] = ' '; kbuf[ki++] = 's'; kbuf[ki++] = 'e';
+        kbuf[ki++] = 'c'; kbuf[ki++] = 't'; kbuf[ki++] = 'o';
+        kbuf[ki++] = 'r'; kbuf[ki++] = 's'; kbuf[ki++] = ',';
+        kbuf[ki++] = ' '; kbuf[ki++] = 'F'; kbuf[ki++] = 'A';
+        kbuf[ki++] = 'T'; kbuf[ki++] = '1'; kbuf[ki++] = '2';
+        kbuf[ki] = '\0';
+        puts_at(29, 7, kbuf, ATTR(15, 0));
+    }
 
     uint32_t has_cpuid = 0;
     __asm__ __volatile__ (
@@ -122,76 +157,64 @@ void cmd_about(const char* args) {
         v[10] = (ecx >> 16) & 0xFF; v[11] = (ecx >> 24) & 0xFF;
         v[12] = '\0';
 
-        for (x = 29; x < 70; x++)
-            VGA[8*80 + x] = CELL(' ', ATTR(0, 0));
-        vga_puts(29, 8, v, ATTR(15, 0));
+        puts_at(29, 8, v, ATTR(15, 0));
     } else {
-        vga_puts(29, 8, "(CPUID unavailable)", ATTR(8, 0));
+        puts_at(29, 8, "(CPUID unavailable)", ATTR(8, 0));
     }
 
-    __asm__ __volatile__("int $0x12" : "=a"(ram_kb));
-    for (x = 29; x < 50; x++)
-        VGA[9*80 + x] = CELL(' ', ATTR(0, 0));
+    ram_kb = get_mem_size();
     {
         char rbuf[8];
-        int ri = 0;
-        if (ram_kb == 0) {
-            rbuf[ri++] = '0';
-        } else {
-            uint16_t rt = ram_kb;
-            char rd[6];
-            int rdi = 0;
-            while (rt > 0) {
-                rd[rdi++] = '0' + (rt % 10);
-                rt /= 10;
-            }
-            while (rdi > 0) rbuf[ri++] = rd[--rdi];
-        }
+        int ri = u16_to_str(rbuf, ram_kb);
         rbuf[ri++] = ' ';
         rbuf[ri++] = 'K';
         rbuf[ri++] = 'B';
         rbuf[ri] = '\0';
-        vga_puts(29, 9, rbuf, ATTR(15, 0));
+        puts_at(29, 9, rbuf, ATTR(15, 0));
     }
 
-    vga_puts(29, 10, __DATE__, ATTR(15, 0));
-    VGA[10*80 + 45] = CELL(' ', ATTR(15, 0));
-    vga_puts(46, 10, __TIME__, ATTR(8, 0));
+    puts_at(29, 10, __DATE__, ATTR(15, 0));
+    putc_at(45, 10, ' ', ATTR(15, 0));
+    puts_at(46, 10, __TIME__, ATTR(8, 0));
 
-    for (x = 20; x < 60; x++)
-        VGA[12*80 + x] = CELL(0xC4, ATTR(8, 0));
+    for (i = 20; i < 60; i++)
+        putc_at(i, 12, 0xC4, ATTR(8, 0));
 
-    VGA[14*80 + 31] = CELL(0x10, ATTR(15, 0));
-    VGA[14*80 + 32] = CELL(' ',  ATTR(15, 0));
-    vga_puts(33, 14, "Press any key", ATTR(15, 0));
-    VGA[14*80 + 47] = CELL(' ',  ATTR(15, 0));
-    VGA[14*80 + 48] = CELL(0x11, ATTR(15, 0));
+    putc_at(31, 14, 0x10, ATTR(15, 0));
+    putc_at(32, 14, ' ',  ATTR(15, 0));
+    puts_at(33, 14, "Press any key", ATTR(15, 0));
+    putc_at(47, 14, ' ',  ATTR(15, 0));
+    putc_at(48, 14, 0x11, ATTR(15, 0));
 
-    VGA[5*80 + 18] = CELL(0x10, ATTR(8, 0));
-    VGA[1*80 + 76] = CELL('|', ATTR(14, 0));
+    putc_at(18, 6, 0x10, ATTR(8, 0));
+    putc_at(76, 1, '|',  ATTR(14, 0));
 
-    while (!kbhit()) {
+    for (tick = 0; tick < 30; tick++) {
         int bi = tick & 7;
         draw_border(bcols[bi]);
 
-        VGA[1*80 + 76] = CELL(spinner[tick & 3], ATTR(14, 0));
+        putc_at(76, 1, spinner[tick & 3], ATTR(14, 0));
 
         pulse = (tick & 4) ? ATTR(15,0) : ATTR(8,0);
-        VGA[14*80 + 31] = CELL(0x10, pulse);
-        VGA[14*80 + 32] = CELL(' ',  pulse);
-        vga_puts(33, 14, "Press any key", pulse);
-        VGA[14*80 + 47] = CELL(' ',  pulse);
-        VGA[14*80 + 48] = CELL(0x11, pulse);
+        putc_at(31, 14, 0x10, pulse);
+        putc_at(32, 14, ' ',  pulse);
+        puts_at(33, 14, "Press any key", pulse);
+        putc_at(47, 14, ' ',  pulse);
+        putc_at(48, 14, 0x11, pulse);
 
         si = (tick >> 3) % 5;
         prev = (si + 4) % 5;
-        VGA[(5+prev)*80 + 18] = CELL(0x10, ATTR(8, 0));
-        VGA[(5+si)*80 + 18] = CELL(0x10, ATTR(14, 0));
+        putc_at(18, 6 + prev, 0x10, ATTR(8, 0));
+        putc_at(18, 6 + si,  0x10, ATTR(14, 0));
 
         wait_ms(180);
-        tick++;
     }
 
-    rdkey();
-    gotoxy(0, r);
+    cur_col = saved_col;
+    clear_screen();
+
+    __asm__ __volatile__ (
+        "movb $0x01, %%ah\n\tmovw $0x0607, %%cx\n\tint $0x10"
+        : : : "eax", "ecx"
+    );
 }

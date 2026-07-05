@@ -132,6 +132,7 @@ static void call_module_buf(const char* args) {
     uint16_t buf_off, args_off;
 
     buf_off = (uint16_t)(uint32_t)mod_buf;
+    uint16_t mod_size = sizeof(mod_buf);
     __asm__ __volatile__(
         "cld\n\t"
         "pushw %%es\n\t"
@@ -139,11 +140,11 @@ static void call_module_buf(const char* args) {
         "movw %%ax, %%es\n\t"
         "xorw %%di, %%di\n\t"
         "movw %0, %%si\n\t"
-        "movw $0x1000, %%cx\n\t"
+        "movw %1, %%cx\n\t"
         "rep movsb\n\t"
         "popw %%es\n\t"
         :
-        : "r"(buf_off)
+        : "r"(buf_off), "r"(mod_size)
         : "ax", "cx", "si", "di", "memory"
     );
 
@@ -286,6 +287,8 @@ void hexdump(const void* addr, int count) {
 static const uint8_t theme_colors[] = {0x1F, 0x02, 0x06, 0x04, 0x0F};
 
 void load_theme(void) {
+    cur_col = 0x1F;
+
     uint8_t config[8];
     memset(config, 0, sizeof(config));
 
@@ -332,19 +335,31 @@ static const struct cli_command cmd_table[] = {
 #define CMD_COUNT (sizeof(cmd_table) / sizeof(struct cli_command))
 
 static const uint8_t help_sections[] = {8, 11, 18};
-static const char* help_snames[] = {"General", "Files", "Apps", "System"};
+
+static void more_prompt(int* count) {
+    (*count)++;
+    if (*count >= 23) {
+        print_str("--more--");
+        get_key();
+        print_str("\r        \r");
+        *count = 0;
+    }
+}
 
 void cmd_help(const char* args) {
-    int si = 0;
-    print_str("  -- ");
-    print_str(help_snames[0]);
-    print_str(" --\r\n");
+    int si = 0, lines = 0;
+    print_str("  -- General --\r\n");
+    more_prompt(&lines);
     for (int i = 0; i < CMD_COUNT; i++) {
         if (si < 3 && i == help_sections[si]) {
             si++;
             print_str("\r\n  -- ");
-            print_str(help_snames[si]);
+            if (si == 1) print_str("Files");
+            else if (si == 2) print_str("Apps");
+            else if (si == 3) print_str("System");
             print_str(" --\r\n");
+            more_prompt(&lines);
+            more_prompt(&lines);
         }
         print_str("  ");
         print_str(cmd_table[i].name);
@@ -352,6 +367,7 @@ void cmd_help(const char* args) {
         print_str(" - ");
         print_str(cmd_table[i].description);
         print_str("\r\n");
+        more_prompt(&lines);
     }
 }
 

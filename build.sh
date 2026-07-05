@@ -65,7 +65,7 @@ truncate -s 1474560 build/iridium.img
 # -B uses our boot sector as template (keeps boot code),
 # mformat updates the BPB fields to match the geometry below.
 echo "[*] Creating FAT12 filesystem with mformat..."
-mformat -i build/iridium.img -B build/boot.bin -R 72 -h 2 -t 80 -s 18 -c 1 :: 2>/dev/null
+mformat -i build/iridium.img -B build/boot.bin -R 73 -h 2 -t 80 -s 18 -c 1 :: 2>/dev/null
 echo "[+] FAT12 filesystem created (72 reserved, 2 FATs, 224 root entries)."
 
 # 8. Build loadable modules

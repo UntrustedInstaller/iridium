@@ -18,6 +18,7 @@ static int ip; // instruction pointer (index into program)
 static int stop_flag;
 
 static int next_line(int pos) {
+    pos += 2; // skip line number
     while (pos < prog_len && program[pos]) pos++;
     if (pos < prog_len) pos++; // skip null
     return pos;
@@ -284,10 +285,26 @@ static const char* cmd_let(const char* s) {
     return s;
 }
 
-static void run_prog(void) {
-    ip = 0;
+static int kbhit(void) {
+    uint8_t v;
+    __asm__ __volatile__ ("movb $0x01, %%ah\n\tint $0x16\n\tsetnz %0" : "=q"(v) : : "eax");
+    return v;
+}
+
+static void run_prog_from(int start_ip) {
+    ip = start_ip;
     stop_flag = 0;
     while (ip < prog_len && !stop_flag) {
+        // Check for Ctrl+C to break
+        if (kbhit()) {
+            uint16_t key;
+            __asm__ __volatile__ ("movb $0x00, %%ah\n\tint $0x16" : "=a"(key));
+            if ((key & 0xFF) == 3) {
+                print_str("^C\r\n");
+                stop_flag = 1;
+                break;
+            }
+        }
         int curr = ip;
         const char* s = program + curr + 2; // skip line number
         
@@ -306,7 +323,7 @@ static void run_prog(void) {
             if (cond && line > 0) {
                 int new_ip = find_line_num(line);
                 if (new_ip >= 0) ip = new_ip;
-                else { print_str("?GOTO not found\r\n"); stop_flag = 1; }
+                else { print_str("?GOTO NOT FOUND\r\n"); stop_flag = 1; }
             }
         }
         else if ((rest = match_word(s, "GOTO"))) {
@@ -315,7 +332,7 @@ static void run_prog(void) {
             if (line > 0) {
                 int new_ip = find_line_num(line);
                 if (new_ip >= 0) ip = new_ip;
-                else { print_str("?GOTO not found\r\n"); stop_flag = 1; }
+                else { print_str("?GOTO NOT FOUND\r\n"); stop_flag = 1; }
             }
         }
         else if ((rest = match_word(s, "INPUT"))) { cmd_input(rest); }
@@ -339,6 +356,8 @@ static void run_prog(void) {
         if (ip == curr) ip = next_line(curr);
     }
 }
+
+static void run_prog(void) { run_prog_from(0); }
 
 static void cmd_list(void) {
     int pos = 0;
@@ -386,12 +405,12 @@ void cmd_basic(const char* args) {
     }
     
     // Entry banner
-    print_str("Iridium BASIC v0.1\r\n");
+    print_str("IRIDIUM TINYBASIC\r\n");
     
     // REPL
     char line[MAX_LINE];
     while (1) {
-        print_str("\r\nOk\r\n> ");
+        print_str("\r\nREADY.\r\n> ");
         
         int li = 0;
         memset(line, 0, MAX_LINE);
@@ -454,10 +473,20 @@ void cmd_basic(const char* args) {
                 }
                 load_buf[out_len] = '\0';
                 if (fs_write_file(fname, (uint8_t*)load_buf, out_len)) {
-                    print_str("?SAVE failed\r\n");
+                    print_str("?SAVE FAILED\r\n");
                 } else {
-                    print_str("Saved.\r\n");
+                    print_str("SAVED.\r\n");
                 }
+            }
+        }
+        else if ((rest = match_word(s, "GOTO"))) {
+            skip_spaces(&rest);
+            int line = parse_line_num(&rest);
+            if (line > 0) {
+                int new_ip = find_line_num(line);
+                if (new_ip >= 0) {
+                    run_prog_from(new_ip);
+                } else { print_str("?GOTO not found\r\n"); }
             }
         }
         else if ((rest = match_word(s, "LOAD"))) {
@@ -471,7 +500,7 @@ void cmd_basic(const char* args) {
                 clear_prog();
                 memset(load_buf, 0, sizeof(load_buf));
                 if (fs_read_file(fname, (uint8_t*)load_buf, sizeof(load_buf) - 1)) {
-                    print_str("?LOAD failed\r\n");
+                    print_str("?LOAD FAILED\r\n");
                 } else {
                     int i = 0;
                     while (load_buf[i]) {
@@ -490,7 +519,7 @@ void cmd_basic(const char* args) {
                         if (line_num > 0) add_line(line_num, text);
                         while (load_buf[i] == '\r' || load_buf[i] == '\n') i++;
                     }
-                    print_str("Loaded.\r\n");
+                    print_str("LOADED.\r\n");
                 }
             }
         }

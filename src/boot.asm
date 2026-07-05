@@ -87,7 +87,18 @@ boot_start:
     mov dh, 1
     mov bx, 0x6A00      ; Buffer after 53 sectors (53*512 = 0x6A00)
     int 0x13
-    jnc .success
+    jc .read_fail
+
+    ; Read cylinder 2, head 0, sector 1 (LBA 72) into 0x1000:0x8E00
+    mov ah, 0x02
+    mov al, 1
+    mov ch, 2
+    mov cl, 1
+    mov dh, 0
+    mov bx, 0x8E00      ; Buffer after 71 sectors (71*512 = 0x8E00)
+    int 0x13
+    jc .read_fail
+    jmp .success
 
 .read_fail:
     xor ax, ax          ; Reset disk
