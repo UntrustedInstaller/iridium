@@ -71,8 +71,8 @@ asm_print_str:
     ; Route every character through asm_print_char so scroll
     ; logic is applied consistently in one place
     push si
-    mov ah, al          ; stash char
-    ; call the char routine inline to avoid segment weirdness
+    mov ah, al          ; Stash char
+    ; Call the char routine inline to avoid segment weirdness
     mov al, ah
     call do_print_char
     pop si
@@ -89,7 +89,7 @@ asm_print_char:
     push cx
     push dx
 
-    mov ah, al              ; preserve the character
+    mov ah, al              ; Preserve the character
     call do_print_char
 
     pop dx
@@ -315,6 +315,160 @@ lba_to_chs:
 global boot_drive
 boot_drive  db 0
 
-; Everything after this in the original kernel file gets migrated over to C
+; =====================================================================
+;    INT 60H API HANDLER — Module-to-Kernel API
+; =====================================================================
+; Called by loadable modules via int 60h.
+; Module must set ES = module segment before calling (for pointer args).
+;
+; CX = function number
+;   0 = print_str  (ES:BX = string)
+;   1 = print_char (AL = char)
+;   2 = get_key    → AX = keycode
+;   3 = clear_screen
+;   4 = gotoxy     (DL = col, DH = row)
+;   5 = read_sector  (AX = LBA, ES:BX = buf) → AL=0 ok, 1 err
+;   6 = write_sector (AX = LBA, ES:BX = buf) → AL=0 ok, 1 err
+;   7 = get_cursor   → (DL = row, DH = col)
+;   8 = print_int    (AX = value)
+; =====================================================================
+global int60_handler
+int60_handler:
+    push ds
+    push si
+    push di
+
+    push ax             ; save AX — print_int (fn 8) passes its value here
+    mov ax, 0x1000
+    mov ds, ax
+    pop ax              ; restore AX so print_int etc. see the right value
+
+    cmp cx, 0
+    je .print_str
+    cmp cx, 1
+    je .print_char
+    cmp cx, 2
+    je .get_key
+    cmp cx, 3
+    je .clear_screen
+    cmp cx, 4
+    je .gotoxy
+    cmp cx, 5
+    je .read
+    cmp cx, 6
+    je .write
+    cmp cx, 7
+    je .get_cursor
+    cmp cx, 8
+    je .print_int
+    jmp .done
+
+.print_str:
+    ; ES:BX = string (module set ES = module seg before int 60h)
+    mov si, bx
+    cld
+.ps_loop:
+    mov al, [es:si]
+    cmp al, 0
+    je .done
+    push si
+    call do_print_char
+    pop si
+    inc si
+    jmp .ps_loop
+
+.print_char:
+    call do_print_char
+    jmp .done
+
+.get_key:
+    mov ah, 0x00
+    int 0x16
+    ; AX = keycode
+    jmp .done
+
+.clear_screen:
+    call cls
+    jmp .done
+
+.gotoxy:
+    mov ah, 0x02
+    mov bh, 0
+    int 0x10
+    jmp .done
+
+.read:
+    ; AX = LBA, ES:BX = buffer
+    ; ES already = module segment (set by module before int 60h)
+    mov si, ax
+    mov di, bx
+    mov ax, si
+    call lba_to_chs
+    mov bx, di
+    mov ah, 0x02
+    mov al, 1
+    mov dl, [boot_drive]   ; DS = kernel segment → correct
+    int 0x13
+    mov al, 0
+    jnc .read_ok
+    mov al, 1
+.read_ok:
+    jmp .done
+
+.write:
+    mov si, ax
+    mov di, bx
+    mov ax, si
+    call lba_to_chs
+    mov bx, di
+    mov ah, 0x03
+    mov al, 1
+    mov dl, [boot_drive]
+    int 0x13
+    mov al, 0
+    jnc .write_ok
+    mov al, 1
+.write_ok:
+    jmp .done
+
+.get_cursor:
+    mov ah, 0x03
+    mov bh, 0
+    int 0x10
+    ; DL = col, DH = row
+    jmp .done
+
+.print_int:
+    ; AX = value
+    push bx
+    push cx
+    push dx
+    xor cx, cx
+    mov bx, 10
+.pi_loop:
+    xor dx, dx
+    div bx
+    push dx
+    inc cx
+    cmp ax, 0
+    jne .pi_loop
+.pi_out:
+    pop dx
+    add dl, '0'
+    mov al, dl
+    call do_print_char
+    loop .pi_out
+    pop dx
+    pop cx
+    pop bx
+    jmp .done
+
+.done:
+    pop di
+    pop si
+    pop ds
+    iret
+
+; EEvery CLI-based thing and program that WAS here gets migrated over to C
 ; Not only does this make code more readable, it frees me from the 
 ; assembly portion of the OS, saving my sanity

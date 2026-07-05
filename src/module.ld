@@ -1,18 +1,15 @@
-ENTRY(kernel_init)
+ENTRY(_start)
 OUTPUT_FORMAT("binary")
 
 SECTIONS
 {
-    /* Execute flat at segment offset 0x0000 */
     . = 0x0000;
 
-    .text : {
-        *kernel_asm.o(.text)
+    .text : SUBALIGN(2) {
         *(.text)
         *(.text.*)
     }
 
-    /* Force data sections to follow code immediately with NO page alignment */
     .rodata : SUBALIGN(2) {
         *(.rodata)
         *(.rodata.*)
@@ -23,11 +20,13 @@ SECTIONS
         *(.data.*)
     }
 
+    _bss_start = .;
     .bss : SUBALIGN(2) {
         *(.bss)
         *(.bss.*)
         *(COMMON)
     }
+    _bss_end = .;
 
     /DISCARD/ : {
         *(.note*)

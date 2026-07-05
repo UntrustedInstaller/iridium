@@ -3,14 +3,11 @@ __asm__(".code16gcc\n");
 
 #include "app/types.h"
 #include "app/apps.h"
+#include "app/fs.h"
 
 uint8_t cur_col = 0x1F;
 extern uint8_t boot_drive;
-
-#define CONFIG_SECTOR 50
-#define EDITOR_SECTOR 51
-#define EDITOR_SECTORS 8
-#define EDITOR_MAX_SIZE (EDITOR_SECTORS * 512)
+extern void int60_handler(void);
 
 // =====================================================================
 //  HARDWARE ABSTRACTION LAYER
@@ -109,6 +106,78 @@ uint8_t write_sector(uint16_t lba, void* buffer) {
         : "ecx", "edx", "memory"
     );
     return (uint8_t)result;
+}
+
+// =====================================================================
+//  MODULE LOADING SYSTEM
+// =====================================================================
+static void install_api(void) {
+    uint16_t off = (uint16_t)(uint32_t)&int60_handler;
+    __asm__ __volatile__(
+        "cli\n\t"
+        "xorw %%ax, %%ax\n\t"
+        "movw %%ax, %%es\n\t"
+        "movw %0, %%es:0x0180\n\t"
+        "movw $0x1000, %%es:0x0182\n\t"
+        "sti\n\t"
+        :
+        : "r"(off)
+        : "ax", "memory"
+    );
+}
+
+static uint8_t mod_buf[MODULE_SECTORS * 512];
+
+static void call_module_buf(const char* args) {
+    uint16_t buf_off, args_off;
+
+    buf_off = (uint16_t)(uint32_t)mod_buf;
+    __asm__ __volatile__(
+        "cld\n\t"
+        "pushw %%es\n\t"
+        "movw $0x2000, %%ax\n\t"
+        "movw %%ax, %%es\n\t"
+        "xorw %%di, %%di\n\t"
+        "movw %0, %%si\n\t"
+        "movw $0x1000, %%cx\n\t"
+        "rep movsb\n\t"
+        "popw %%es\n\t"
+        :
+        : "r"(buf_off)
+        : "ax", "cx", "si", "di", "memory"
+    );
+
+    if (args && args[0]) {
+        args_off = (uint16_t)(uint32_t)args;
+        __asm__ __volatile__(
+            "cld\n\t"
+            "pushw %%es\n\t"
+            "movw $0x2000, %%ax\n\t"
+            "movw %%ax, %%es\n\t"
+            "movw $0xFC00, %%di\n\t"
+            "movw %0, %%si\n\t"
+            "1:\n\t"
+            "lodsb\n\t"
+            "stosb\n\t"
+            "testb %%al, %%al\n\t"
+            "jnz 1b\n\t"
+            "popw %%es\n\t"
+            :
+            : "r"(args_off)
+            : "ax", "si", "di", "memory"
+        );
+    }
+
+    __asm__ __volatile__("lcall $0x2000, $0x0000" : : : "memory");
+}
+
+static void cmd_snake(const char* args) {
+    memset(mod_buf, 0, sizeof(mod_buf));
+    if (fs_read_file(SNAKE_FILE, mod_buf, sizeof(mod_buf))) {
+        print_str("ERR: " SNAKE_FILE " not found on disk\r\n");
+        return;
+    }
+    call_module_buf(args);
 }
 
 // =====================================================================
@@ -217,9 +286,10 @@ void hexdump(const void* addr, int count) {
 static const uint8_t theme_colors[] = {0x1F, 0x02, 0x06, 0x04, 0x0F};
 
 void load_theme(void) {
-    static uint8_t config[512];
+    uint8_t config[8];
+    memset(config, 0, sizeof(config));
 
-    if (read_sector(CONFIG_SECTOR, config) != 0) return;
+    if (fs_read_file(CONFIG_FILE, config, sizeof(config))) return;
 
     uint8_t theme_num = config[0];
     if (theme_num > 4) return;
@@ -243,18 +313,27 @@ static const struct cli_command cmd_table[] = {
     {"theme",    5, cmd_theme,   "Quick change color scheme (0-4)"},
 
     {"edit",     4, cmd_edit,    "Launch the primitive text editor"},
+    {"brainfuck", 9, cmd_bf,      "Execute a Brainfuck program (no args = saved)"},
+    {"bfedit",   6, cmd_bfedit,  "Edit and save a Brainfuck program to disk"},
+    {"snake",    5, cmd_snake,   "Play Snake in the terminal"},
+    {"basic",    5, cmd_basic,   "BASIC interpreter (Tiny BASIC)"},
 
     {"reboot",   6, cmd_reboot,  "Soft reboot the machine"},
     {"poweroff", 8, cmd_poweroff,"Shut down the system via APM"},
+
+    {"ls",       2, cmd_ls,      "List files in the root directory"},
+    {"cat",      3, cmd_cat,     "Display a file's contents"},
+    {"rm",       2, cmd_rm,      "Delete a file from disk"},
 };
 
 #define CMD_COUNT (sizeof(cmd_table) / sizeof(struct cli_command))
 
-static const uint8_t help_breaks[] = {2, 6, 8, 9};
+static const uint8_t help_breaks[] = {2, 6, 8, 12};
 
 void cmd_help(const char* args) {
     print_str("AVAILABLE COMMANDS:\r\n");
     for (int i = 0; i < CMD_COUNT; i++) {
+        if (cmd_table[i].description[0] == '\0') continue;
         print_str("  ");
         print_str(cmd_table[i].name);
         for (int s = 0; s < (10 - cmd_table[i].name_len); s++) print_char(' ');
@@ -360,10 +439,51 @@ static void buf_delete_at(char* buf, int* len, int* pos) {
 }
 
 // =====================================================================
+//  FILESYSTEM COMMANDS
+// =====================================================================
+void cmd_ls(const char* args) {
+    fs_list_dir();
+}
+
+void cmd_cat(const char* args) {
+    if (!args || args[0] == '\0') {
+        print_str("ERR: Usage: cat <filename>\r\n");
+        return;
+    }
+
+    char buf[513];
+    memset(buf, 0, sizeof(buf));
+
+    if (fs_read_file(args, buf, 512)) {
+        print_str("ERR: File not found\r\n");
+        return;
+    }
+
+    print_str(buf);
+    print_str("\r\n");
+}
+
+void cmd_rm(const char* args) {
+    if (!args || args[0] == '\0') {
+        print_str("ERR: Usage: rm <filename>\r\n");
+        return;
+    }
+
+    if (fs_delete_file(args)) {
+        print_str("ERR: File not found\r\n");
+        return;
+    }
+
+    print_str("Deleted.\r\n");
+}
+
+// =====================================================================
 //  IRIDIUM SHELL
 // =====================================================================
 void iridium_main() {
+    install_api();
     boot_chime();
+    fs_init();
     load_theme();
     clear_screen();
     print_str("IridiumOS -- Osmium's periodic neighbor.\r\n");

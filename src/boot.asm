@@ -7,10 +7,10 @@ bits 16
 jmp short boot_start
 nop
 
-db "OSMIUM "
+db "OSMIUM  "
 dw 512
 db 1
-dw 1
+dw 72
 db 2
 dw 224
 dw 2880
@@ -67,7 +67,27 @@ boot_start:
     mov dh, 1
     mov bx, 0x2200      ; Buffer after first 17 sectors (17*512 = 0x2200)
     int 0x13
-    jnc .success        ; Both reads succeeded!
+    jc .read_fail
+
+    ; Read cylinder 1, head 0, sectors 1-18 into 0x1000:0x4600
+    mov ah, 0x02
+    mov al, 18
+    mov ch, 1
+    mov cl, 1
+    mov dh, 0
+    mov bx, 0x4600      ; Buffer after 35 sectors (35*512 = 0x4600)
+    int 0x13
+    jc .read_fail
+
+    ; Read cylinder 1, head 1, sectors 1-18 (LBA 54-71) into 0x1000:0x6A00
+    mov ah, 0x02
+    mov al, 18
+    mov ch, 1
+    mov cl, 1
+    mov dh, 1
+    mov bx, 0x6A00      ; Buffer after 53 sectors (53*512 = 0x6A00)
+    int 0x13
+    jnc .success
 
 .read_fail:
     xor ax, ax          ; Reset disk

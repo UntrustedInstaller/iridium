@@ -1,11 +1,15 @@
 __asm__(".code16gcc\n");
 #include "apps.h"
+#include "fs.h"
+
+extern uint8_t cur_col;
 
 static char ed_buf[EDITOR_MAX_SIZE];
 static int ed_size;
 static int ed_cursor;
 static int ed_scroll;
 static int ed_modified;
+static const char* ed_filename;
 
 static int line_start(int pos) {
     while (pos > 0 && ed_buf[pos - 1] != '\n') pos--;
@@ -17,7 +21,22 @@ static int line_end(int pos) {
     return pos;
 }
 
-static void ensure_visible(void) {
+static void clear_line_remainder(int start_col) {
+    if (start_col >= 80) return;
+    int count = 80 - start_col;
+    __asm__ __volatile__ (
+        "movw %0, %%cx\n\t"
+        "movb $0x09, %%ah\n\t"
+        "movb $0x00, %%bh\n\t"
+        "int $0x10\n\t"
+        :
+        : "g"((uint16_t)count), "a"((0x09 << 8) | ' '), "b"((uint16_t)(uint8_t)cur_col)
+        : "cx", "dx", "memory"
+    );
+}
+
+static int ensure_visible(void) {
+    int old_scroll = ed_scroll;
     for (int limit = 0; limit < 100; limit++) {
         int line = 2;
         int p = ed_scroll;
@@ -36,27 +55,20 @@ static void ensure_visible(void) {
             if (ed_scroll < ed_size) ed_scroll++;
         } else break;
     }
+    return ed_scroll != old_scroll;
 }
 
-static void ed_render(void) {
-    ensure_visible();
-
-    for (int r = 2; r < 24; r++) {
-        gotoxy(0, r);
-        for (int c = 0; c < 80; c++) print_char(' ');
+static void ed_render_line(int r, int* p) {
+    gotoxy(0, r);
+    int c = 0;
+    while (*p < ed_size && ed_buf[*p] != '\n' && c < 80) {
+        print_char(ed_buf[*p]); (*p)++; c++;
     }
+    clear_line_remainder(c);
+    if (*p < ed_size && ed_buf[*p] == '\n') (*p)++;
+}
 
-    int p = ed_scroll;
-    for (int r = 2; r < 24; r++) {
-        gotoxy(0, r);
-        int c = 0;
-        while (p < ed_size && ed_buf[p] != '\n' && c < 80) {
-            print_char(ed_buf[p]); p++; c++;
-        }
-        while (c < 80) { print_char(' '); c++; }
-        if (p < ed_size && ed_buf[p] == '\n') p++;
-    }
-
+static void ed_render_status(void) {
     gotoxy(0, 0);
     print_str("IRIDIUM TEXT EDITOR");
     if (ed_modified) {
@@ -77,7 +89,9 @@ static void ed_render(void) {
 
     gotoxy(0, 24);
     print_str("Ctrl+S=Save  Ctrl+Q=Quit  INS");
+}
 
+static void ed_set_cursor(void) {
     int sy = 2;
     int sp = ed_scroll;
     while (sp < ed_cursor && sp < ed_size) {
@@ -88,6 +102,33 @@ static void ed_render(void) {
     if (sx > 79) sx = 79;
     if (sy > 23) sy = 23;
     gotoxy(sx, sy);
+}
+
+static void ed_render_all(void) {
+    int p = ed_scroll;
+    for (int r = 2; r < 24; r++) ed_render_line(r, &p);
+    ed_render_status();
+    ed_set_cursor();
+}
+
+static void ed_render_from(int pos) {
+    while (pos > 0 && ed_buf[pos - 1] != '\n') pos--;
+
+    int p = ed_scroll;
+    int start_row = -1;
+    for (int r = 2; r < 24; r++) {
+        int le = p;
+        while (le < ed_size && ed_buf[le] != '\n') le++;
+        if (pos == p || (pos > p && pos <= le)) { start_row = r; break; }
+        p = le + 1;
+        if (p >= ed_size) break;
+    }
+    if (start_row < 0) { ed_render_all(); return; }
+
+    p = pos;
+    for (int r = start_row; r < 24; r++) ed_render_line(r, &p);
+    ed_render_status();
+    ed_set_cursor();
 }
 
 static void ed_insert(char c) {
@@ -145,22 +186,16 @@ static void cur_down(void) {
     if (ed_cursor > ne) ed_cursor = ne;
 }
 
-static void ed_load(void) {
+static void ed_load(const char* fname) {
     ed_size = 0;
-    for (int s = 0; s < EDITOR_SECTORS; s++) {
-        if (read_sector(EDITOR_SECTOR + s, ed_buf + s * 512)) return;
-    }
+    if (fs_read_file(fname, (uint8_t*)ed_buf, EDITOR_MAX_SIZE)) return;
     while (ed_size < EDITOR_MAX_SIZE && ed_buf[ed_size]) ed_size++;
 }
 
-static void ed_save(void) {
+static void ed_save(const char* fname) {
     ed_buf[ed_size] = '\0';
-    for (int i = ed_size + 1; i < EDITOR_MAX_SIZE; i++) ed_buf[i] = 0;
-    for (int s = 0; s < EDITOR_SECTORS; s++) {
-        if (write_sector(EDITOR_SECTOR + s, ed_buf + s * 512)) {
-            print_str("ERR: Failed to save file\r\n");
-            return;
-        }
+    if (fs_write_file(fname, (uint8_t*)ed_buf, (uint32_t)ed_size)) {
+        print_str("ERR: Failed to save file\r\n");
     }
 }
 
@@ -173,34 +208,51 @@ void cmd_edit(const char* args) {
     ed_scroll = 0;
     ed_modified = 0;
 
-    ed_load();
+    ed_filename = (args && args[0]) ? args : EDITOR_FILE;
+    ed_load(ed_filename);
+
+    ed_render_all();
 
     while (1) {
-        ed_render();
-
         uint16_t key = get_key();
         uint8_t ascii = key & 0xFF;
         uint8_t scan = (key >> 8) & 0xFF;
 
         if (ascii == 19) {
-            ed_save();
+            ed_save(ed_filename);
             ed_modified = 0;
+            ed_render_status();
+            ed_set_cursor();
         } else if (ascii == 17 || ascii == 27) {
             break;
         } else if (ascii == 13) {
+            int render_pos = line_start(ed_cursor);
             ed_insert('\n');
+            if (ensure_visible()) { ed_render_all(); }
+            else { ed_render_from(render_pos); }
         } else if (ascii == 8) {
+            int render_pos = ed_cursor > 0 ? line_start(ed_cursor - 1) : 0;
             ed_backspace();
+            if (ensure_visible()) { ed_render_all(); }
+            else { ed_render_from(render_pos); }
         } else if (ascii == 0) {
-            if (scan == 0x48) cur_up();
-            else if (scan == 0x50) cur_down();
-            else if (scan == 0x4B) cur_left();
-            else if (scan == 0x4D) cur_right();
-            else if (scan == 0x47) ed_cursor = line_start(ed_cursor);
-            else if (scan == 0x4F) ed_cursor = line_end(ed_cursor);
-            else if (scan == 0x53) ed_delete();
+            if (scan == 0x48) { cur_up(); ed_set_cursor(); }
+            else if (scan == 0x50) { cur_down(); ed_set_cursor(); }
+            else if (scan == 0x4B) { cur_left(); ed_set_cursor(); }
+            else if (scan == 0x4D) { cur_right(); ed_set_cursor(); }
+            else if (scan == 0x47) { ed_cursor = line_start(ed_cursor); ed_set_cursor(); }
+            else if (scan == 0x4F) { ed_cursor = line_end(ed_cursor); ed_set_cursor(); }
+            else if (scan == 0x53) {
+                int render_pos = line_start(ed_cursor);
+                ed_delete();
+                if (ensure_visible()) { ed_render_all(); }
+                else { ed_render_from(render_pos); }
+            }
         } else if (ascii >= 32 && ascii <= 126) {
+            int render_pos = line_start(ed_cursor);
             ed_insert((char)ascii);
+            if (ensure_visible()) { ed_render_all(); }
+            else { ed_render_from(render_pos); }
         }
     }
 

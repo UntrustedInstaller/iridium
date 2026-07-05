@@ -17,14 +17,23 @@ void print_int(uint16_t val);
 void hexdump(const void* addr, int count);
 int strcmp(const char* s1, const char* s2);
 int strncmp(const char* s1, const char* s2, int n);
+void* memset(void* s, int c, int n);
 
 void gotoxy(uint8_t col, uint8_t row);
+void get_cursor_rc(uint8_t* row, uint8_t* col);
 uint8_t read_sector(uint16_t lba, void* buffer);
 uint8_t write_sector(uint16_t lba, void* buffer);
 
-#define CONFIG_SECTOR 50
-#define EDITOR_SECTOR 51
+// File names for on-disk persistence
+#define EDITOR_FILE "EDITOR.TXT"
 #define EDITOR_SECTORS 8
 #define EDITOR_MAX_SIZE (EDITOR_SECTORS * 512)
+#define CONFIG_FILE "CONFIG.BIN"
+#define BF_FILE "HELLO.BF"
+#define SNAKE_FILE "SNAKE.BIN"
+
+#define MODULE_SECTORS 8
+#define MODULE_LOAD_SEGMENT 0x2000
+#define MODULE_ARGS_OFFSET 0xFC00
 
 #endif

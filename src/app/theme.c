@@ -1,5 +1,6 @@
 __asm__(".code16gcc\n");
 #include "apps.h"
+#include "fs.h"
 
 extern uint8_t cur_col;
 
@@ -23,10 +24,13 @@ void cmd_theme(const char* args) {
         return;
     }
 
-    uint8_t config[512];
-    for (int i = 0; i < 512; i++) config[i] = 0;
+    uint8_t config[8];
+    memset(config, 0, sizeof(config));
     config[0] = num;
-    write_sector(CONFIG_SECTOR, config);
+    if (fs_write_file(CONFIG_FILE, config, 1)) {
+        print_str("ERR: Failed to save theme\r\n");
+        return;
+    }
 
     clear_screen();
     print_str("IridiumOS -- Osmium's periodic neighbor.\r\n");

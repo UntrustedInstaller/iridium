@@ -22,33 +22,82 @@ echo "[*] Compiling Kernel Core (src/main.c)..."
 # -Isrc/app tells GCC to find types.h and apps.h inside src/app/
 gcc -m16 -march=i386 -ffreestanding -fno-pic -fno-PIE -fno-stack-protector -nostdlib -Isrc/app -c src/main.c -o build/main_c.o
 
+echo "[*] Compiling Filesystem Layer (src/fs.c)..."
+gcc -m16 -march=i386 -ffreestanding -fno-pic -fno-PIE -fno-stack-protector -nostdlib -Isrc/app -c src/fs.c -o build/fs.o
+
 # 4. Automatically discover and compile all modular files inside src/app/
 echo "[*] Compiling application modules from src/app/..."
 APP_OBJECTS=""
 
+# Modules that are loadable (not linked into kernel)
+LOADABLE_MODULES="snake"
+
 for c_file in src/app/*.c; do
     base_name=$(basename "$c_file" .c)
-    echo "    -> Compiling Module: $base_name.c"
     
-    # -Isrc/app allows application C files to find apps.h and types.h in their own folder
+    # Skip loadable modules — they get separate treatment
+    skip=0
+    for lm in $LOADABLE_MODULES; do
+        if [ "$base_name" = "$lm" ]; then skip=1; break; fi
+    done
+    if [ "$skip" -eq 1 ]; then
+        echo "    -> (skipped for kernel: $base_name.c — loadable module)"
+        continue
+    fi
+    
+    echo "    -> Compiling Module: $base_name.c"
     gcc -m16 -march=i386 -ffreestanding -fno-pic -fno-PIE -fno-stack-protector -nostdlib -Isrc/app -c "$c_file" -o "build/app/${base_name}.o"
     APP_OBJECTS="$APP_OBJECTS build/app/${base_name}.o"
 done
 
 # 5. Link everything together using parent-directory linker.ld script
 echo "[*] Linking Iridium via linker.ld into flat kernel binary..."
-ld -m elf_i386 -T linker.ld build/kernel_asm.o build/main_c.o $APP_OBJECTS -o build/kernel.bin
+ld -m elf_i386 -T linker.ld build/kernel_asm.o build/main_c.o build/fs.o $APP_OBJECTS -o build/kernel.bin
 
-# 6. Combine and Pad into build/iridium.img
+# 7. Combine and Pad into build/iridium.img
 echo "[*] Synthesizing final floppy disk image..."
 cat build/boot.bin build/kernel.bin > build/iridium.img
 
 # Ensure it fits a standard 1.44MB floppy
 truncate -s 1474560 build/iridium.img
 
-# Initialize config sector (LBA 50) with default theme 0 (0x1F)
-printf '\x1f' | dd of=build/iridium.img bs=512 seek=50 count=1 conv=notrunc status=none 2>/dev/null
-echo "[+] Config sector initialized at LBA 50 with default theme."
+# Create a real FAT12 filesystem on the floppy image using mtools.
+# -B uses our boot sector as template (keeps boot code),
+# mformat updates the BPB fields to match the geometry below.
+echo "[*] Creating FAT12 filesystem with mformat..."
+mformat -i build/iridium.img -B build/boot.bin -R 72 -h 2 -t 80 -s 18 -c 1 :: 2>/dev/null
+echo "[+] FAT12 filesystem created (72 reserved, 2 FATs, 224 root entries)."
+
+# 8. Build loadable modules
+echo "[*] Building loadable modules..."
+
+build_module() {
+    local name="$1"
+    echo "    -> Building module: $name"
+    
+    gcc -m16 -march=i386 -ffreestanding -fno-pic -fno-PIE -fno-stack-protector -nostdlib -Isrc/app -c "src/app/${name}.c" -o "build/mod_${name}.o"
+    nasm -f elf32 src/module_entry.asm -o "build/mod_entry_${name}.o"
+    ld -m elf_i386 -T src/module.ld "build/mod_entry_${name}.o" "build/mod_${name}.o" -o "build/${name}.mod"
+    
+    echo "    -> ${name}.mod built ($(stat -c%s "build/${name}.mod") bytes)"
+}
+
+build_module "snake"
+
+# 9. Seed files into the FAT12 filesystem
+echo "[*] Seeding files into FAT12 filesystem..."
+
+# Default theme config (byte 0 = theme 0 = 0x1F white-on-blue)
+printf '\x1f' > build/config.bin
+
+# Default BF "Hello World" program
+printf '%s' '++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.' > build/hello.bf
+
+mcopy -i build/iridium.img build/config.bin ::CONFIG.BIN  2>/dev/null
+mcopy -i build/iridium.img build/hello.bf  ::HELLO.BF     2>/dev/null
+mcopy -i build/iridium.img build/snake.mod ::SNAKE.BIN    2>/dev/null
+
+echo "[+] Files seeded: CONFIG.BIN, HELLO.BF, SNAKE.BIN"
 
 echo "[+] Build complete: build/iridium.img created successfully!"
 echo "----------------------------------------------"
