@@ -2,7 +2,7 @@ __asm__(".code16gcc\n");
 #include "apps.h"
 #include "fs.h"
 
-// Tiny BASIC interpreter for Iridium
+// Tiny BASIC interpreter for OsmiumOS
 // Based on Palo Alto Tiny BASIC (Li-Chen Wang, 1976)
 
 #define MAX_PROG 2048
