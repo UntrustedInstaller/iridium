@@ -89,9 +89,9 @@ boot_start:
     int 0x13
     jc .read_fail
 
-    ; Read cylinder 2, head 0, sector 1 (LBA 72) into 0x1000:0x8E00
+    ; Read cylinder 2, head 0, sectors 1-7 (LBA 72-78) into 0x1000:0x8E00
     mov ah, 0x02
-    mov al, 1
+    mov al, 7
     mov ch, 2
     mov cl, 1
     mov dh, 0

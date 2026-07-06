@@ -52,7 +52,11 @@ done
 
 # 5. Link everything together using parent-directory linker.ld script
 echo "[*] Linking kernel..."
-ld -m elf_i386 -T linker.ld build/kernel_asm.o build/main_c.o build/fs.o $APP_OBJECTS -o build/kernel.bin
+ld -m elf_i386 -T linker.ld build/kernel_asm.o build/main_c.o build/fs.o $APP_OBJECTS -o build/kernel.elf
+
+# 6. Strip BSS from the binary — real-mode kernel has no loader to zero it
+echo "[*] Stripping BSS from kernel binary..."
+objcopy -O binary -j .text -j .rodata -j .data build/kernel.elf build/kernel.bin
 
 # 7. Combine and Pad into build/os.img
 echo "[*] Synthesizing final floppy disk image..."

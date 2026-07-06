@@ -30,9 +30,12 @@ void cmd_poweroff(const char* args);
 void cmd_bf(const char* args);
 void cmd_bfedit(const char* args);
 void cmd_about(const char* args);
+void cmd_exec(const char* args);
 void cmd_ls(const char* args);
 void cmd_cat(const char* args);
 void cmd_rm(const char* args);
 void cmd_basic(const char* args);
+void cmd_mv(const char* args);
+void cmd_cp(const char* args);
 
 #endif

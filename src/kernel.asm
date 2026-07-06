@@ -10,6 +10,10 @@ global cls
 extern iridium_main
 extern cur_col
 
+; BSS boundaries for zeroing
+extern _bss_start
+extern _bss_end
+
 ; =====================================================================
 ;    KERNEL INITIALIZATION
 ; =====================================================================
@@ -32,6 +36,13 @@ kernel_init:
     mov bp, sp          ; Align base pointer with stack pointer
 
     mov [boot_drive], dl
+
+                        ; Zero BSS — kernel binary no longer includes BSS
+    xor al, al
+    mov edi, _bss_start
+    mov ecx, _bss_end
+    sub ecx, edi
+    rep stosb
 
                         ; Intensive backgrounds and disable blinking (IBM PC leftovers)
     mov ax, 0x1003

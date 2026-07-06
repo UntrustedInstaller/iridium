@@ -181,6 +181,55 @@ static void cmd_snake(const char* args) {
     call_module_buf(args);
 }
 
+static int try_load_and_run(const char* name, const char* args) {
+    char fname[13];
+    int has_dot = 0;
+
+    for (int i = 0; name[i]; i++)
+        if (name[i] == '.') { has_dot = 1; break; }
+
+    if (!has_dot) {
+        int i;
+        for (i = 0; i < 8 && name[i]; i++) fname[i] = name[i];
+        fname[i++] = '.'; fname[i++] = 'B'; fname[i++] = 'I'; fname[i++] = 'N';
+        fname[i] = '\0';
+    } else {
+        int i;
+        for (i = 0; i < 12 && name[i]; i++) fname[i] = name[i];
+        fname[i] = '\0';
+    }
+
+    memset(mod_buf, 0, sizeof(mod_buf));
+    if (fs_read_file(fname, mod_buf, sizeof(mod_buf))) return 1;
+    call_module_buf(args);
+    return 0;
+}
+
+void cmd_exec(const char* args) {
+    if (!args || !args[0]) {
+        print_str("ERR: Usage: exec <filename> [args]\r\n");
+        return;
+    }
+
+    char name[13];
+    int i = 0;
+    while (args[i] && args[i] != ' ' && i < 12) {
+        name[i] = args[i];
+        i++;
+    }
+    name[i] = '\0';
+
+    const char* p = args;
+    while (*p && *p != ' ') p++;
+    while (*p == ' ') p++;
+
+    if (try_load_and_run(name, p)) {
+        print_str("ERR: '");
+        print_str(name);
+        print_str("' not found\r\n");
+    }
+}
+
 // =====================================================================
 //  BOOT CHIME
 // =====================================================================
@@ -312,11 +361,14 @@ static const struct cli_command cmd_table[] = {
     {"hexdump",  7, cmd_hexdump, "Dump system memory"},
     {"cpuinfo",  7, cmd_cpuinfo, "CPU vendor and features"},
     {"about",    5, cmd_about,   "About this OS"},
+    {"exec",     4, cmd_exec,    "Run a module from disk"},
 
     // ---- Files ----
     {"ls",       2, cmd_ls,      "List files on disk"},
     {"cat",      3, cmd_cat,     "View a text file"},
     {"rm",       2, cmd_rm,      "Remove a file"},
+    {"mv",       2, cmd_mv,      "Rename a file"},
+    {"cp",       2, cmd_cp,      "Copy a file"},
 
     // ---- Apps ----
     {"palette",  7, cmd_palette, "Show color palette"},
@@ -334,7 +386,7 @@ static const struct cli_command cmd_table[] = {
 
 #define CMD_COUNT (sizeof(cmd_table) / sizeof(struct cli_command))
 
-static const uint8_t help_sections[] = {8, 11, 18};
+static const uint8_t help_sections[] = {9, 14, 21};
 
 static void more_prompt(int* count) {
     (*count)++;
@@ -501,6 +553,69 @@ void cmd_rm(const char* args) {
     }
 
     print_str("Deleted.\r\n");
+}
+
+void cmd_mv(const char* args) {
+    if (!args || args[0] == '\0') {
+        print_str("ERR: Usage: mv <source> <dest>\r\n");
+        return;
+    }
+
+    char src[13], dst[13];
+    int i = 0;
+    while (args[i] && args[i] != ' ' && i < 12) { src[i] = args[i]; i++; }
+    src[i] = '\0';
+
+    if (args[i] != ' ') {
+        print_str("ERR: Usage: mv <source> <dest>\r\n");
+        return;
+    }
+    while (args[i] == ' ') i++;
+
+    int j = 0;
+    while (args[i] && args[i] != ' ' && j < 12) { dst[j] = args[i]; i++; j++; }
+    dst[j] = '\0';
+
+    if (fs_rename(src, dst)) {
+        print_str("ERR: '");
+        print_str(src);
+        print_str("' not found\r\n");
+    } else {
+        print_str("Renamed.\r\n");
+    }
+}
+
+void cmd_cp(const char* args) {
+    if (!args || args[0] == '\0') {
+        print_str("ERR: Usage: cp <source> <dest>\r\n");
+        return;
+    }
+
+    char src[13], dst[13];
+    int i = 0;
+    while (args[i] && args[i] != ' ' && i < 12) { src[i] = args[i]; i++; }
+    src[i] = '\0';
+
+    if (args[i] != ' ') {
+        print_str("ERR: Usage: cp <source> <dest>\r\n");
+        return;
+    }
+    while (args[i] == ' ') i++;
+
+    int j = 0;
+    while (args[i] && args[i] != ' ' && j < 12) { dst[j] = args[i]; i++; j++; }
+    dst[j] = '\0';
+
+    uint8_t r = fs_copy(src, dst, mod_buf, sizeof(mod_buf));
+    if (r == 1) {
+        print_str("ERR: '");
+        print_str(src);
+        print_str("' not found\r\n");
+    } else if (r == 2) {
+        print_str("ERR: File too large to copy\r\n");
+    } else {
+        print_str("Copied.\r\n");
+    }
 }
 
 // =====================================================================
@@ -677,7 +792,21 @@ void iridium_main() {
         }
 
         if (!command_executed) {
-            print_str("ERR: Unknown shell command. Type 'help'\r\n");
+            char modname[13];
+            int i = 0;
+            while (cmd_buf[i] && cmd_buf[i] != ' ' && i < 12) {
+                modname[i] = cmd_buf[i];
+                i++;
+            }
+            modname[i] = '\0';
+
+            const char* p = cmd_buf;
+            while (*p && *p != ' ') p++;
+            while (*p == ' ') p++;
+
+            if (try_load_and_run(modname, p)) {
+                print_str("ERR: Unknown shell command. Type 'help'\r\n");
+            }
         }
 
         hist_cur = -1;

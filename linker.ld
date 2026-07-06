@@ -1,5 +1,5 @@
 ENTRY(kernel_init)
-OUTPUT_FORMAT("binary")
+OUTPUT_FORMAT("elf32-i386")
 
 SECTIONS
 {
@@ -22,13 +22,15 @@ SECTIONS
         *(.data)
         *(.data.*)
     }
-    _kernel_end = .;
 
+    _bss_start = .;
     .bss : SUBALIGN(2) {
         *(.bss)
         *(.bss.*)
         *(COMMON)
     }
+    _bss_end = .;
+    _kernel_end = .;
 
     /DISCARD/ : {
         *(.note*)

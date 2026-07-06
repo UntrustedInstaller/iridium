@@ -31,5 +31,7 @@ void fs_list_dir(void);
 uint8_t fs_read_file(const char* name, void* buf, uint16_t max);
 uint8_t fs_write_file(const char* name, const void* data, uint32_t size);
 uint8_t fs_delete_file(const char* name);
+uint8_t fs_copy(const char* src, const char* dst, void* buf, uint16_t buf_size);
+uint8_t fs_rename(const char* old_name, const char* new_name);
 
 #endif

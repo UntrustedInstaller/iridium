@@ -377,3 +377,44 @@ uint8_t fs_delete_file(const char* name) {
     }
     return 1;
 }
+
+uint8_t fs_copy(const char* src, const char* dst, void* buf, uint16_t buf_size) {
+    uint16_t cluster;
+    uint32_t size;
+    if (find_file(src, &cluster, &size) < 0) return 1;
+    if (size > buf_size) return 2;
+    if (fs_read_file(src, buf, buf_size)) return 1;
+    return fs_write_file(dst, buf, size);
+}
+
+uint8_t fs_rename(const char* old_name, const char* new_name) {
+    uint16_t cluster;
+    uint32_t size;
+    int slot = find_file(old_name, &cluster, &size);
+    if (slot < 0) return 1;
+
+    uint8_t* de = fs.root_dir_buf + slot * 32;
+
+    for (int i = 0; i < 8; i++) de[i] = ' ';
+    for (int i = 8; i < 11; i++) de[i] = ' ';
+
+    int fi = 0;
+    for (const char* p = new_name; *p && *p != '.' && fi < 8; p++, fi++) {
+        char c = *p;
+        if (c >= 'a' && c <= 'z') c -= 0x20;
+        de[fi] = c;
+    }
+    const char* dot = 0;
+    for (const char* p = new_name; *p; p++) if (*p == '.') { dot = p; break; }
+    if (dot) {
+        int ei = 0;
+        for (const char* p = dot + 1; *p && ei < 3; p++, ei++) {
+            char c = *p;
+            if (c >= 'a' && c <= 'z') c -= 0x20;
+            de[8 + ei] = c;
+        }
+    }
+
+    flush_root();
+    return 0;
+}
