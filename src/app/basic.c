@@ -1,9 +1,5 @@
 __asm__(".code16gcc\n");
-#include "apps.h"
-#include "fs.h"
-
-// Tiny BASIC interpreter for Iridium
-// Based on Palo Alto Tiny BASIC (Li-Chen Wang, 1976)
+#include "api.h"
 
 #define MAX_PROG 2048
 #define MAX_LINE 256
@@ -14,13 +10,19 @@ static char program[MAX_PROG];
 static char load_buf[4096];
 static int prog_len;
 static int16_t vars[NUM_VARS];
-static int ip; // instruction pointer (index into program)
+static int ip;
 static int stop_flag;
 
+static void* my_memset(void* s, int c, int n) {
+    uint8_t* p = (uint8_t*)s;
+    while (n--) *p++ = (uint8_t)c;
+    return s;
+}
+
 static int next_line(int pos) {
-    pos += 2; // skip line number
+    pos += 2;
     while (pos < prog_len && program[pos]) pos++;
-    if (pos < prog_len) pos++; // skip null
+    if (pos < prog_len) pos++;
     return pos;
 }
 
@@ -40,7 +42,6 @@ static int add_line(int num, const char* text) {
     while (pos < prog_len) {
         uint16_t ln = (uint8_t)program[pos] << 8 | (uint8_t)program[pos + 1];
         if (ln == num) {
-            // Replace existing line
             int end = next_line(pos);
             int rest = prog_len - end;
             int tlen = 0;
@@ -57,7 +58,6 @@ static int add_line(int num, const char* text) {
             return 0;
         }
         if (ln > num) {
-            // Insert before this line
             int rest = prog_len - pos;
             int tlen = 0;
             while (text[tlen]) tlen++;
@@ -73,7 +73,6 @@ static int add_line(int num, const char* text) {
         }
         pos = next_line(pos);
     }
-    // Append at end
     int tlen = 0;
     while (text[tlen]) tlen++;
     int new_len = 2 + tlen + 1;
@@ -109,11 +108,6 @@ static char to_upper(char c) { return (c >= 'a' && c <= 'z') ? c - 0x20 : c; }
 static void skip_spaces(const char** s) {
     while (**s == ' ') (*s)++;
 }
-
-// Expression evaluator: recursive descent
-// expr = term {('+'|'-') term}
-// term = factor {('*'|'/') factor}
-// factor = number | variable | '(' expr ')' | '-' factor
 
 static int expr(const char** s);
 
@@ -166,12 +160,11 @@ static int expr(const char** s) {
     return v;
 }
 
-// Compare two values using relational operator
 static int relop(const char** s) {
     skip_spaces(s);
     int a = expr(s);
     skip_spaces(s);
-    int op = 0; // 0=none, 1:=, 2:<, 3:>, 4:<=, 5:>=, 6:<>
+    int op = 0;
     if (**s == '=') { op = 1; (*s)++; }
     else if (**s == '<') {
         (*s)++;
@@ -184,7 +177,7 @@ static int relop(const char** s) {
         if (**s == '=') { op = 5; (*s)++; }
         else op = 3;
     }
-    if (!op) return a; // no relop, return raw value (for "IF a THEN")
+    if (!op) return a;
     int b = expr(s);
     switch (op) {
         case 1: return a == b;
@@ -203,7 +196,6 @@ static const char* match_word(const char* s, const char* word) {
     const char* w = word;
     while (*w && to_upper(*p) == *w) { p++; w++; }
     if (*w) return 0;
-    // Must end at space or string terminator
     if (*p && *p != ' ' && *p != '\0' && *p != '"') return 0;
     return p;
 }
@@ -218,10 +210,6 @@ static int parse_line_num(const char** s) {
     return n;
 }
 
-static void print_str_p(const char* s) {
-    print_str(s);
-}
-
 static const char* cmd_print(const char* s) {
     skip_spaces(&s);
     if (*s == '"') {
@@ -231,7 +219,6 @@ static const char* cmd_print(const char* s) {
     } else {
         print_int(expr(&s));
     }
-    // Handle multiple items separated by , or ;
     while (*s == ',' || *s == ';') {
         s++;
         skip_spaces(&s);
@@ -257,7 +244,7 @@ static const char* cmd_input(const char* s) {
         while (1) {
             uint16_t key = get_key();
             uint8_t ascii = key & 0xFF;
-            if (ascii == 13) {
+            if (ascii == 13 || ascii == 10) {
                 buf[bi] = '\0';
                 print_str("\r\n");
                 break;
@@ -295,7 +282,6 @@ static void run_prog_from(int start_ip) {
     ip = start_ip;
     stop_flag = 0;
     while (ip < prog_len && !stop_flag) {
-        // Check for Ctrl+C to break
         if (kbhit()) {
             uint16_t key;
             __asm__ __volatile__ ("movb $0x00, %%ah\n\tint $0x16" : "=a"(key));
@@ -306,11 +292,11 @@ static void run_prog_from(int start_ip) {
             }
         }
         int curr = ip;
-        const char* s = program + curr + 2; // skip line number
-        
+        const char* s = program + curr + 2;
+
         skip_spaces(&s);
         const char* rest;
-        
+
         if ((rest = match_word(s, "PRINT"))) { cmd_print(rest); }
         else if ((rest = match_word(s, "LET"))) { cmd_let(rest); }
         else if ((rest = match_word(s, "IF"))) {
@@ -336,10 +322,9 @@ static void run_prog_from(int start_ip) {
             }
         }
         else if ((rest = match_word(s, "INPUT"))) { cmd_input(rest); }
-        else if ((rest = match_word(s, "REM"))) { /* comment, skip */ }
+        else if ((rest = match_word(s, "REM"))) { }
         else if ((rest = match_word(s, "END"))) { stop_flag = 1; }
         else {
-            // Could be implicit LET (e.g., "A=5")
             int has_let = 0;
             const char* t = s;
             skip_spaces(&t);
@@ -351,8 +336,7 @@ static void run_prog_from(int start_ip) {
             }
             if (has_let) cmd_let(s);
         }
-        
-        // Advance to next line only if no jump happened
+
         if (ip == curr) ip = next_line(curr);
     }
 }
@@ -373,53 +357,19 @@ static void cmd_list(void) {
     }
 }
 
-void cmd_basic(const char* args) {
-    clear_screen();
-    
-    // Load program from file if specified
-    if (args && args[0]) {
-        prog_len = 0;
-        memset(load_buf, 0, sizeof(load_buf));
-        if (fs_read_file(args, (uint8_t*)load_buf, sizeof(load_buf) - 1) == 0) {
-            int i = 0;
-            while (load_buf[i]) {
-                int line_num = 0;
-                while (load_buf[i] >= '0' && load_buf[i] <= '9') {
-                    line_num = line_num * 10 + (load_buf[i] - '0');
-                    i++;
-                }
-                if (line_num == 0 && load_buf[i] != ' ') { i++; continue; }
-                while (load_buf[i] == ' ') i++;
-                char text[MAX_LINE];
-                int ti = 0;
-                while (load_buf[i] && load_buf[i] != '\r' && load_buf[i] != '\n' && ti < MAX_LINE - 1) {
-                    text[ti++] = load_buf[i++];
-                }
-                text[ti] = '\0';
-                if (line_num > 0) add_line(line_num, text);
-                while (load_buf[i] == '\r' || load_buf[i] == '\n') i++;
-            }
-        }
-    } else {
-        clear_prog();
-    }
-    
-    // Entry banner
-    print_str("TINYBASIC\r\n");
-    
-    // REPL
+void module_main(void) {
     char line[MAX_LINE];
     while (1) {
         print_str("\r\nREADY.\r\n> ");
-        
+
         int li = 0;
-        memset(line, 0, MAX_LINE);
+        my_memset(line, 0, MAX_LINE);
         while (1) {
             uint16_t key = get_key();
             uint8_t ascii = key & 0xFF;
             uint8_t scan = (key >> 8) & 0xFF;
-            
-            if (ascii == 13) {
+
+            if (ascii == 13 || ascii == 10) {
                 print_str("\r\n");
                 break;
             }
@@ -429,13 +379,11 @@ void cmd_basic(const char* args) {
                 print_char(ascii);
             }
         }
-        
-        // Skip empty lines
+
         const char* s = line;
         skip_spaces(&s);
         if (*s == '\0') continue;
-        
-        // Check for immediate commands
+
         const char* rest;
         if ((rest = match_word(s, "BYE"))) { break; }
         else if ((rest = match_word(s, "RUN"))) { run_prog(); }
@@ -444,7 +392,7 @@ void cmd_basic(const char* args) {
         else if ((rest = match_word(s, "PRINT"))) { cmd_print(rest); }
         else if ((rest = match_word(s, "INPUT"))) { cmd_input(rest); }
         else if ((rest = match_word(s, "LET"))) { cmd_let(rest); }
-        else if ((rest = match_word(s, "REM"))) { /* nothing */ }
+        else if ((rest = match_word(s, "REM"))) { }
         else if ((rest = match_word(s, "SAVE"))) {
             skip_spaces(&rest);
             if (*rest == '"') {
@@ -453,7 +401,6 @@ void cmd_basic(const char* args) {
                 int fi = 0;
                 while (*rest && *rest != '"' && fi < 63) fname[fi++] = *rest++;
                 fname[fi] = '\0';
-                // Convert internal format to text lines
                 int out_len = 0;
                 int pos = 0;
                 while (pos < prog_len) {
@@ -498,7 +445,7 @@ void cmd_basic(const char* args) {
                 while (*rest && *rest != '"' && fi < 63) fname[fi++] = *rest++;
                 fname[fi] = '\0';
                 clear_prog();
-                memset(load_buf, 0, sizeof(load_buf));
+                my_memset(load_buf, 0, sizeof(load_buf));
                 if (fs_read_file(fname, (uint8_t*)load_buf, sizeof(load_buf) - 1)) {
                     print_str("?LOAD FAILED\r\n");
                 } else {
@@ -524,7 +471,6 @@ void cmd_basic(const char* args) {
             }
         }
         else {
-            // Try as a numbered line
             int line_num = parse_line_num(&s);
             if (line_num > 0) {
                 skip_spaces(&s);
@@ -534,7 +480,6 @@ void cmd_basic(const char* args) {
                     del_line(line_num);
                 }
             } else {
-                // Try as implicit LET
                 const char* t = s;
                 skip_spaces(&t);
                 if (is_letter(*t)) {

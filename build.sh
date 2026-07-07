@@ -30,7 +30,7 @@ echo "[*] Compiling application modules from src/app/..."
 APP_OBJECTS=""
 
 # Modules that are loadable (not linked into kernel)
-LOADABLE_MODULES="snake"
+LOADABLE_MODULES="snake bf editor basic about"
 
 for c_file in src/app/*.c; do
     base_name=$(basename "$c_file" .c)
@@ -87,6 +87,10 @@ build_module() {
 }
 
 build_module "snake"
+build_module "bf"
+build_module "editor"
+build_module "basic"
+build_module "about"
 
 # 9. Seed files into the FAT12 filesystem
 echo "[*] Seeding files into FAT12 filesystem..."
@@ -100,8 +104,12 @@ printf '%s' '++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+
 mcopy -i build/os.img build/config.bin ::CONFIG.BIN  2>/dev/null
 mcopy -i build/os.img build/hello.bf  ::HELLO.BF     2>/dev/null
 mcopy -i build/os.img build/snake.mod ::SNAKE.BIN    2>/dev/null
+mcopy -i build/os.img build/bf.mod     ::BRAINFUC.BIN 2>/dev/null
+mcopy -i build/os.img build/editor.mod ::EDIT.BIN     2>/dev/null
+mcopy -i build/os.img build/basic.mod  ::BASIC.BIN    2>/dev/null
+mcopy -i build/os.img build/about.mod  ::ABOUT.BIN    2>/dev/null
 
-echo "[+] Files seeded: CONFIG.BIN, HELLO.BF, SNAKE.BIN"
+echo "[+] Files seeded: CONFIG.BIN, HELLO.BF, SNAKE.BIN, BRAINFUC.BIN, EDIT.BIN, BASIC.BIN, ABOUT.BIN"
 
 echo "[+] Build complete: build/os.img created successfully!"
 echo "----------------------------------------------"

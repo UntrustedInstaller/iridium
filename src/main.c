@@ -108,6 +108,18 @@ uint8_t write_sector(uint16_t lba, void* buffer) {
     return (uint8_t)result;
 }
 
+uint8_t read_sectors(uint16_t lba, uint16_t count, void* buffer) {
+    uint16_t result, cnt = count;
+    __asm__ __volatile__ (
+        "movw %2, %%cx\n\t"
+        "call asm_read_sectors"
+        : "=a"(result)
+        : "a"(lba), "m"(cnt), "b"(buffer)
+        : "ecx", "edx", "memory"
+    );
+    return (uint8_t)result;
+}
+
 // =====================================================================
 //  MODULE LOADING SYSTEM
 // =====================================================================
@@ -172,13 +184,58 @@ static void call_module_buf(const char* args) {
     __asm__ __volatile__("lcall $0x2000, $0x0000" : : : "memory");
 }
 
-static void cmd_snake(const char* args) {
+static int try_load_and_run(const char* name, const char* args);
+
+static void cmd_about(const char* args)     { try_load_and_run("about", ""); }
+static void cmd_brainfuck(const char* args) { try_load_and_run("brainfuck", args); }
+static void cmd_edit(const char* args)      { try_load_and_run("edit", args); }
+static void cmd_basic(const char* args)     { try_load_and_run("basic", args); }
+static void cmd_snake(const char* args)     { try_load_and_run("snake", args); }
+
+// =====================================================================
+//  MODULE FS API BRIDGE (called from INT 60h CX=9,10)
+// =====================================================================
+// Called with DS=kernel seg, ES=module seg. We copy data across segments
+// using rep movsb: DS:SI → ES:DI (read) or swapped (write).
+
+uint8_t api_fs_read_file(const char* name, uint16_t dest_off, uint16_t max) {
     memset(mod_buf, 0, sizeof(mod_buf));
-    if (fs_read_file(SNAKE_FILE, mod_buf, sizeof(mod_buf))) {
-        print_str("ERR: " SNAKE_FILE " not found on disk\r\n");
-        return;
-    }
-    call_module_buf(args);
+    if (fs_read_file(name, mod_buf, max)) return 1;
+
+    __asm__ __volatile__ (
+        "movw %0, %%si\n\t"
+        "movw %1, %%di\n\t"
+        "movw %2, %%cx\n\t"
+        "cld\n\t"
+        "rep movsb\n\t"
+        :
+        : "g"((uint16_t)(uint32_t)mod_buf), "g"(dest_off), "g"(max)
+        : "si", "di", "cx", "memory"
+    );
+    return 0;
+}
+
+uint8_t api_fs_write_file(const char* name, uint16_t src_off, uint16_t size) {
+    uint16_t copy_size = size < sizeof(mod_buf) ? size : sizeof(mod_buf);
+
+    __asm__ __volatile__ (
+        "movw %%ds, %%bx\n\t"
+        "movw %%es, %%ax\n\t"
+        "movw %%ax, %%ds\n\t"
+        "movw %%bx, %%es\n\t"
+        "movw %0, %%si\n\t"
+        "movw %1, %%di\n\t"
+        "movw %2, %%cx\n\t"
+        "cld\n\t"
+        "rep movsb\n\t"
+        "movw %%bx, %%ds\n\t"
+        "movw %%ax, %%es\n\t"
+        :
+        : "g"(src_off), "g"((uint16_t)(uint32_t)mod_buf), "g"(copy_size)
+        : "ax", "bx", "si", "di", "cx", "memory"
+    );
+
+    return fs_write_file(name, mod_buf, size);
 }
 
 static int try_load_and_run(const char* name, const char* args) {
@@ -360,8 +417,7 @@ static const struct cli_command cmd_table[] = {
     {"mem",      3, cmd_mem,     "Show available RAM"},
     {"hexdump",  7, cmd_hexdump, "Dump system memory"},
     {"cpuinfo",  7, cmd_cpuinfo, "CPU vendor and features"},
-    {"about",    5, cmd_about,   "About this OS"},
-    {"exec",     4, cmd_exec,    "Run a module from disk"},
+    {"exec",     4, cmd_exec,    "Run .BIN from disk by name"},
 
     // ---- Files ----
     {"ls",       2, cmd_ls,      "List files on disk"},
@@ -373,10 +429,10 @@ static const struct cli_command cmd_table[] = {
     // ---- Apps ----
     {"palette",  7, cmd_palette, "Show color palette"},
     {"theme",    5, cmd_theme,   "Change color scheme"},
+    {"about",    5, cmd_about,   "About this OS"},
+    {"brainfuck", 9, cmd_brainfuck, "Run Brainfuck code"},
     {"edit",     4, cmd_edit,    "Text editor"},
     {"basic",    5, cmd_basic,   "BASIC interpreter"},
-    {"brainfuck", 9, cmd_bf,     "Run Brainfuck code"},
-    {"bfedit",   6, cmd_bfedit,  "Edit Brainfuck code"},
     {"snake",    5, cmd_snake,   "Play Snake game"},
 
     // ---- System ----
@@ -386,7 +442,7 @@ static const struct cli_command cmd_table[] = {
 
 #define CMD_COUNT (sizeof(cmd_table) / sizeof(struct cli_command))
 
-static const uint8_t help_sections[] = {9, 14, 21};
+static const uint8_t help_sections[] = {8, 13, 20};
 
 static void more_prompt(int* count) {
     (*count)++;
@@ -624,8 +680,6 @@ void cmd_cp(const char* args) {
 void iridium_main() {
     install_api();
     boot_chime();
-    fs_init();
-    load_theme();
     clear_screen();
     print_str("OsmiumOS\r\n");
     print_int(get_mem_size());
@@ -633,6 +687,8 @@ void iridium_main() {
 
     render_pal_mtx();
     print_str("\r\n");
+
+    load_theme();
 
     char cmd_buf[CMD_MAX + 1];
     int cmd_idx, cur_pos;

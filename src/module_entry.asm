@@ -6,11 +6,24 @@ extern _bss_end
 
 global _start
 _start:
+    ; Save kernel's stack (SS=0x1000) before changing segments.
+    ; The return address from lcall is on the kernel's stack at SS:SP.
+    push ss
+    pop ax               ; AX = SS = 0x1000
+    mov bx, sp           ; BX = SP (= 0xFFEA after lcall pushed 6 bytes)
+
     ; Set up segment registers for the module's segment (0x2000)
-    ; Kernel calls us via lcall $0x2000, $0x0000 but leaves DS/ES at kernel segment
-    mov ax, 0x2000
-    mov ds, ax
-    mov es, ax
+    ; CRITICAL: DS must equal SS so that GCC's -m16 code correctly dereferences
+    ; pointers to stack-allocated variables (like "line" in BASIC's input loop).
+    mov cx, 0x2000
+    mov ds, cx
+    mov es, cx
+
+    mov [saved_ss], ax
+    mov [saved_sp], bx
+
+    mov ss, cx
+    mov sp, 0xFE00
 
     ; Zero BSS
     mov cx, _bss_end
@@ -22,11 +35,19 @@ _start:
     cld
     rep stosb
 .no_bss:
-    ; Use the kernel's stack — lcall already pushed the return address there
     ; Call the module's main function
-    o32 call module_main     ; 32-bit call to match C's 32-bit ret (-m16 generates 66 C3)
-    ; Give the kernel its segment back so it doesn't paint with the wrong brush
+    o32 call module_main
+
+    ; Restore kernel's segment registers and stack so retf can find the return address
+    cli
+    mov ss, [saved_ss]
+    mov sp, [saved_sp]
     mov ax, 0x1000
     mov ds, ax
     mov es, ax
-    o32 retf                 ; 32-bit far return to match kernel's 32-bit lcall (66 9A pushes 4+2=6 bytes)
+    sti
+    o32 retf
+
+section .data
+saved_sp dw 0
+saved_ss dw 0

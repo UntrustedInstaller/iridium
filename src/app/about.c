@@ -1,8 +1,5 @@
 __asm__(".code16gcc\n");
-#include "apps.h"
-
-extern uint8_t cur_col;
-extern char _kernel_end[];
+#include "api.h"
 
 #define ATTR(f,b) ((uint8_t)((f) | ((b) << 4)))
 
@@ -17,13 +14,13 @@ static void wait_ms(uint32_t ms) {
 
 static void putc_at(uint8_t x, uint8_t y, char c, uint8_t attr) {
     gotoxy(x, y);
-    cur_col = attr;
+    set_cur_col(attr);
     print_char(c);
 }
 
 static void puts_at(uint8_t x, uint8_t y, const char* s, uint8_t attr) {
     gotoxy(x, y);
-    cur_col = attr;
+    set_cur_col(attr);
     print_str(s);
 }
 
@@ -34,7 +31,7 @@ static void draw_border(uint8_t fg) {
     putc_at(79, 0, 0xBF, a);
     putc_at(0, 24, 0xC0, a);
     gotoxy(79, 24);
-    cur_col = a;
+    set_cur_col(a);
     __asm__ __volatile__ (
         "movb $0x09, %%ah\n\tmovb $0x00, %%bh\n\tmovw $1, %%cx\n\tint $0x10"
         : : "a"(0xD9), "b"((uint16_t)a) : "cc"
@@ -45,7 +42,7 @@ static void draw_border(uint8_t fg) {
     }
     for (i = 1; i < 24; i++) {
         gotoxy(0, i);
-        cur_col = a;
+        set_cur_col(a);
         __asm__ __volatile__ (
             "movb $0x09, %%ah\n\tmovb $0x00, %%bh\n\tmovw $1, %%cx\n\tint $0x10"
             : : "a"(0xB3), "b"((uint16_t)a) : "cc"
@@ -68,13 +65,13 @@ static int u16_to_str(char* buf, uint16_t n) {
     return i;
 }
 
-void cmd_about(const char* args) {
+void module_main(void) {
     int i, tick = 0;
     uint16_t ram_kb;
     uint8_t pulse;
     int si, prev;
     uint8_t r, c;
-    uint8_t saved_col = cur_col;
+    uint8_t saved_col = get_cur_col();
     static const char spinner[] = "|/-\\";
     static const uint8_t bcols[] = {9,11,13,15,14,12,10,8};
 
@@ -85,7 +82,7 @@ void cmd_about(const char* args) {
         : : : "eax", "ecx"
     );
 
-    cur_col = 0;
+    set_cur_col(0);
     clear_screen();
 
     draw_border(bcols[0]);
@@ -103,9 +100,9 @@ void cmd_about(const char* args) {
         }
     }
 
-    puts_at(29, 6, "Migration Milestone 3+",    ATTR(15, 0));
+    puts_at(29, 6, "Migration Milestone 5",    ATTR(15, 0));
     {
-        uint16_t kb = (uint32_t)_kernel_end;
+        uint16_t kb = get_kernel_end();
         uint16_t kk = (kb + 1023) / 1024;
         uint16_t ks = (kb + 511) / 512;
         char kbuf[26];
@@ -210,7 +207,7 @@ void cmd_about(const char* args) {
         wait_ms(180);
     }
 
-    cur_col = saved_col;
+    set_cur_col(saved_col);
     clear_screen();
 
     __asm__ __volatile__ (

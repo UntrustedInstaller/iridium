@@ -17,25 +17,20 @@ struct cli_command {
 // Forward declarations for application entry points
 void cmd_help(const char* args);
 void cmd_clear(const char* args);
+void cmd_echo(const char* args);
 void cmd_mem(const char* args);
 void cmd_hexdump(const char* args);
-void cmd_echo(const char* args);
 void cmd_theme(const char* args);
 void cmd_palette(const char* args);
 void cmd_reboot(const char* args);
-void cmd_edit(const char* args);
 void cmd_date(const char* args);
 void cmd_cpuinfo(const char* args);
 void cmd_poweroff(const char* args);
-void cmd_bf(const char* args);
-void cmd_bfedit(const char* args);
-void cmd_about(const char* args);
-void cmd_exec(const char* args);
 void cmd_ls(const char* args);
 void cmd_cat(const char* args);
 void cmd_rm(const char* args);
-void cmd_basic(const char* args);
 void cmd_mv(const char* args);
 void cmd_cp(const char* args);
+void cmd_exec(const char* args);
 
 #endif

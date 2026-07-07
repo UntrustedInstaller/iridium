@@ -14,6 +14,16 @@ extern cur_col
 extern _bss_start
 extern _bss_end
 
+; For kernel memory footprint (about screen)
+extern _kernel_end
+
+; FS API helpers (src/main.c)
+extern api_fs_read_file
+extern api_fs_write_file
+
+; System info
+extern get_mem_size
+
 ; =====================================================================
 ;    KERNEL INITIALIZATION
 ; =====================================================================
@@ -43,6 +53,10 @@ kernel_init:
     mov ecx, _bss_end
     sub ecx, edi
     rep stosb
+
+                        ; Store kernel memory footprint (end of .bss)
+    mov ax, _kernel_end
+    mov [kernel_mem_end], ax
 
                         ; Intensive backgrounds and disable blinking (IBM PC leftovers)
     mov ax, 0x1003
@@ -115,71 +129,54 @@ do_print_char:
     push cx
     push dx
 
-    cmp al, 13              ; \r  – just move cursor to column 0
+    cmp al, 13
     je .do_cr
-    cmp al, 10              ; \n  – advance row, scroll if needed
+    cmp al, 10
     je .do_lf
-    cmp al, 8               ; BS  – move cursor left one column
+    cmp al, 8
     je .do_bs
 
-    ; Normal character
-    mov ah, 0x09            ; Write char + attribute at cursor (does NOT move cursor)
-    mov bh, 0x00            ; Page 0
-    mov bl, [cur_col]       ; Current colour attribute
-    mov cx, 1               ; Write exactly 1 copy
-    int 0x10
-
-    ; Advance cursor one column manually
-    mov ah, 0x03            ; Get cursor position → DH=row, DL=col
+    ; Normal character — use TTY output (handles cursor advance + scroll)
+    mov ah, 0x0E
     mov bh, 0x00
     int 0x10
-    inc dl                  ; Move right one column
-    cmp dl, 80              ; Past end of line?
-    jl .set_cursor
-    mov dl, 0               ; Wrap to column 0 …
-    inc dh                  ; … and drop to next row
-    cmp dh, 25              ; Past last row (rows 0-24)?
-    jl .set_cursor
-    call do_scroll          ; Scroll up and stay on row 24
-    mov dh, 24
-    mov dl, 0
-    jmp .set_cursor
+    jmp .exit
 
     ; Backspace
 .do_bs:
-    mov ah, 0x03            ; Get current cursor position
-    mov bh, 0x00
-    int 0x10                ; DH = row, DL = col
-    test dl, dl             ; Already at column 0?
-    jz .bs_done             ; If so, do nothing (don't walk off the line)
-    dec dl                  ; Move left one column
-    mov ah, 0x02            ; Set cursor
+    mov ah, 0x03
     mov bh, 0x00
     int 0x10
-.bs_done:
-    jmp .exit               ; Skip the set_cursor at the bottom (already set)
+    test dl, dl
+    jz .exit
+    dec dl
+    mov ah, 0x02
+    mov bh, 0x00
+    int 0x10
+    jmp .exit
 
     ; Carriage Return
 .do_cr:
     mov ah, 0x03
     mov bh, 0x00
-    int 0x10                ; DH = current row, DL = current col
-    mov dl, 0               ; Column 0, same row
-    jmp .set_cursor
+    int 0x10
+    mov dl, 0
+    mov ah, 0x02
+    mov bh, 0x00
+    int 0x10
+    jmp .exit
 
     ; Line Feed
 .do_lf:
     mov ah, 0x03
     mov bh, 0x00
-    int 0x10                ; DH = current row
+    int 0x10
     inc dh
     cmp dh, 25
-    jl .set_cursor          ; Still on screen? just move down
-    call do_scroll          ; Last row? scroll, keep cursor on row 24
+    jl .lf_set
+    call do_scroll
     mov dh, 24
-    ; DL already holds the column from INT 10h/03h
-
-.set_cursor:
+.lf_set:
     mov ah, 0x02
     mov bh, 0x00
     int 0x10
@@ -247,6 +244,7 @@ asm_read_sector:
     call lba_to_chs
 
     pop bx
+    push es
     push ds
     pop es
     mov ah, 0x02
@@ -258,6 +256,7 @@ asm_read_sector:
     jnc .read_ok
     mov ax, 1
 .read_ok:
+    pop es
     pop dx
     pop cx
     ret
@@ -273,6 +272,7 @@ asm_write_sector:
     call lba_to_chs
 
     pop bx
+    push es
     push ds
     pop es
     mov ah, 0x03
@@ -284,8 +284,87 @@ asm_write_sector:
     jnc .write_ok
     mov ax, 1
 .write_ok:
+    pop es
     pop dx
     pop cx
+    ret
+
+; Read multiple consecutive sectors via BIOS int 13h
+; Input:  AX = LBA, CX = count, ES:BX = buffer
+; Output: AL = 0 success, 1 error
+global asm_read_sectors
+asm_read_sectors:
+    test cx, cx
+    jz .ars_zero
+    push si
+    push di
+    push bp
+    push es             ; save caller's ES (module segment)
+
+    push ds
+    pop es              ; ES = DS = kernel segment
+
+    mov si, ax          ; SI = current LBA
+    mov di, cx          ; DI = remaining count
+
+.ars_loop:
+    test di, di
+    jz .ars_done_ok
+
+    mov ax, si
+    call lba_to_chs      ; CH=cyl, CL=sector, DH=head
+
+    ; Sectors remaining on this track = 19 - CL
+    mov al, 19
+    sub al, cl
+    jz .ars_done_err
+
+    mov ah, 0
+    cmp ax, di
+    jbe .ars_count_set
+    mov ax, di
+.ars_count_set:
+    push ax              ; save batch count
+
+    mov ah, 0x02
+    mov dl, [boot_drive]
+    int 0x13
+    jc .ars_pop_err
+
+    pop ax               ; AX = batch count
+
+    sub di, ax           ; remaining -= batch
+
+    ; Advance buffer: batch * 512
+    push ax
+    mov cx, 512
+    mul cx               ; DX:AX = batch * 512
+    add bx, ax           ; buffer += batch * 512
+    pop ax               ; AX = batch count
+
+    ; Advance LBA by batch
+    add si, ax
+
+    jmp .ars_loop
+
+.ars_done_ok:
+    xor al, al
+    jmp .ars_done
+
+.ars_pop_err:
+    pop ax               ; clean up batch count from stack
+.ars_done_err:
+    mov al, 1
+
+.ars_done:
+    pop es              ; restore caller's ES
+    pop bp
+    pop di
+    pop si
+    ret
+
+.ars_zero:
+    xor al, al
     ret
 
 ; Convert LBA to CHS for 1.44MB floppy (80 cyl, 2 heads, 18 sect/track)
@@ -326,6 +405,12 @@ lba_to_chs:
 global boot_drive
 boot_drive  db 0
 
+; Staging buffer for filenames passed via module FS API (CX=9,10)
+api_fname   times 13 db 0
+
+global kernel_mem_end
+kernel_mem_end dw 0
+
 ; =====================================================================
 ;    INT 60H API HANDLER — Module-to-Kernel API
 ; =====================================================================
@@ -333,15 +418,21 @@ boot_drive  db 0
 ; Module must set ES = module segment before calling (for pointer args).
 ;
 ; CX = function number
-;   0 = print_str  (ES:BX = string)
-;   1 = print_char (AL = char)
-;   2 = get_key    → AX = keycode
+;   0 = print_str     (ES:BX = string)
+;   1 = print_char    (AL = char)
+;   2 = get_key       → AX = keycode
 ;   3 = clear_screen
-;   4 = gotoxy     (DL = col, DH = row)
-;   5 = read_sector  (AX = LBA, ES:BX = buf) → AL=0 ok, 1 err
-;   6 = write_sector (AX = LBA, ES:BX = buf) → AL=0 ok, 1 err
-;   7 = get_cursor   → (DL = row, DH = col)
-;   8 = print_int    (AX = value)
+;   4 = gotoxy         (DL = col, DH = row)
+;   5 = read_sector   (AX = LBA, ES:BX = buf) → AL=0 ok, 1 err
+;   6 = write_sector  (AX = LBA, ES:BX = buf) → AL=0 ok, 1 err
+;   7 = get_cursor     → (DL = row, DH = col)
+;   8 = print_int     (AX = value)
+;   9 = fs_read_file  (ES:BX = name, AX = dest_off, DX = max) → AL=0 ok, 1 err
+;  10 = fs_write_file (ES:BX = name, AX = src_off, DX = size) → AL=0 ok, 1 err
+;  11 = get_cur_col   → AL = current colour attribute (0x1F etc.)
+;  12 = set_cur_col   (AL = attribute)
+;  13 = get_mem_size  → AX = RAM in KB
+;  14 = get_kernel_end → AX = kernel memory end (size in bytes)
 ; =====================================================================
 global int60_handler
 int60_handler:
@@ -372,6 +463,18 @@ int60_handler:
     je .get_cursor
     cmp cx, 8
     je .print_int
+    cmp cx, 9
+    je .fs_read
+    cmp cx, 10
+    je .fs_write
+    cmp cx, 11
+    je .get_cur_col
+    cmp cx, 12
+    je .set_cur_col
+    cmp cx, 13
+    je .get_mem_size
+    cmp cx, 14
+    je .get_kernel_end
     jmp .done
 
 .print_str:
@@ -449,6 +552,22 @@ int60_handler:
     ; DL = col, DH = row
     jmp .done
 
+.get_cur_col:
+    mov al, [cur_col]
+    jmp .done
+
+.set_cur_col:
+    mov [cur_col], al
+    jmp .done
+
+.get_mem_size:
+    o32 call get_mem_size
+    jmp .done
+
+.get_kernel_end:
+    mov ax, [kernel_mem_end]
+    jmp .done
+
 .print_int:
     ; AX = value
     push bx
@@ -474,12 +593,98 @@ int60_handler:
     pop bx
     jmp .done
 
+; --------------------------------------------------------------------
+;  FS API for modules — CX=9 (read file), CX=10 (write file)
+; --------------------------------------------------------------------
+; Called with:
+;   ES:BX = filename (in module segment)
+;   AX    = buffer offset within module segment (dest for read, src for write)
+;   DX    = max bytes (read) or size (write)
+; Returns:
+;   AL = 0 success, 1 error
+
+.fs_read:
+    push ax
+    push dx
+    push bx
+
+    ; Copy filename from ES:BX to api_fname (up to 12 chars + null)
+    mov si, bx
+    mov di, api_fname
+    cld
+.fr_cp:
+    mov al, [es:si]
+    cmp al, 0
+    je .fr_cp_dn
+    cmp di, api_fname + 12
+    je .fr_cp_dn
+    mov [di], al
+    inc si
+    inc di
+    jmp .fr_cp
+.fr_cp_dn:
+    mov byte [di], 0
+
+    pop bx
+    pop dx              ; DX = max
+    pop ax              ; AX = dest_off
+
+    ; api_fs_read_file(name, dest_off, max)
+    ; Push args right-to-left (32-bit cdecl ABI with -m16)
+    xor ecx, ecx
+    mov cx, dx
+    push ecx            ; arg 3: max
+    xor ecx, ecx
+    mov cx, ax
+    push ecx            ; arg 2: dest_off
+    xor ecx, ecx
+    mov cx, api_fname
+    push ecx            ; arg 1: name
+    o32 call api_fs_read_file
+    add sp, 12          ; pop args
+    jmp .done
+
+.fs_write:
+    push ax
+    push dx
+    push bx
+
+    mov si, bx
+    mov di, api_fname
+    cld
+.fw_cp:
+    mov al, [es:si]
+    cmp al, 0
+    je .fw_cp_dn
+    cmp di, api_fname + 12
+    je .fw_cp_dn
+    mov [di], al
+    inc si
+    inc di
+    jmp .fw_cp
+.fw_cp_dn:
+    mov byte [di], 0
+
+    pop bx
+    pop dx              ; DX = size
+    pop ax              ; AX = src_off
+
+    ; api_fs_write_file(name, src_off, size)
+    xor ecx, ecx
+    mov cx, dx
+    push ecx            ; arg 3: size
+    xor ecx, ecx
+    mov cx, ax
+    push ecx            ; arg 2: src_off
+    xor ecx, ecx
+    mov cx, api_fname
+    push ecx            ; arg 1: name
+    o32 call api_fs_write_file
+    add sp, 12
+    jmp .done
+
 .done:
     pop di
     pop si
     pop ds
     iret
-
-; EEvery CLI-based thing and program that WAS here gets migrated over to C
-; Not only does this make code more readable, it frees me from the 
-; assembly portion of the OS, saving my sanity

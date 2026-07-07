@@ -23,6 +23,7 @@ void gotoxy(uint8_t col, uint8_t row);
 void get_cursor_rc(uint8_t* row, uint8_t* col);
 uint8_t read_sector(uint16_t lba, void* buffer);
 uint8_t write_sector(uint16_t lba, void* buffer);
+uint8_t read_sectors(uint16_t lba, uint16_t count, void* buffer);
 
 // File names for on-disk persistence
 #define EDITOR_FILE "EDITOR.TXT"
@@ -32,7 +33,7 @@ uint8_t write_sector(uint16_t lba, void* buffer);
 #define BF_FILE "HELLO.BF"
 #define SNAKE_FILE "SNAKE.BIN"
 
-#define MODULE_SECTORS 5
+#define MODULE_SECTORS 22
 #define MODULE_LOAD_SEGMENT 0x2000
 #define MODULE_ARGS_OFFSET 0xFC00
 

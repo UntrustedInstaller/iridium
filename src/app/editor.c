@@ -1,8 +1,9 @@
 __asm__(".code16gcc\n");
-#include "apps.h"
-#include "fs.h"
+#include "api.h"
 
-extern uint8_t cur_col;
+#define EDITOR_SECTORS 8
+#define EDITOR_MAX_SIZE (EDITOR_SECTORS * 512)
+#define EDITOR_FILE "EDITOR.TXT"
 
 static char ed_buf[EDITOR_MAX_SIZE];
 static int ed_size;
@@ -10,6 +11,12 @@ static int ed_cursor;
 static int ed_scroll;
 static int ed_modified;
 static const char* ed_filename;
+
+static void* my_memset(void* s, int c, int n) {
+    uint8_t* p = (uint8_t*)s;
+    while (n--) *p++ = (uint8_t)c;
+    return s;
+}
 
 static int line_start(int pos) {
     while (pos > 0 && ed_buf[pos - 1] != '\n') pos--;
@@ -24,13 +31,14 @@ static int line_end(int pos) {
 static void clear_line_remainder(int start_col) {
     if (start_col >= 80) return;
     int count = 80 - start_col;
+    uint8_t col = get_cur_col();
     __asm__ __volatile__ (
         "movw %0, %%cx\n\t"
         "movb $0x09, %%ah\n\t"
         "movb $0x00, %%bh\n\t"
         "int $0x10\n\t"
         :
-        : "g"((uint16_t)count), "a"((0x09 << 8) | ' '), "b"((uint16_t)(uint8_t)cur_col)
+        : "g"((uint16_t)count), "a"((0x09 << 8) | ' '), "b"((uint16_t)(uint8_t)col)
         : "cx", "dx", "memory"
     );
 }
@@ -199,7 +207,9 @@ static void ed_save(const char* fname) {
     }
 }
 
-void cmd_edit(const char* args) {
+void module_main(void) {
+    const char* args = MODULE_ARGS;
+
     clear_screen();
 
     for (int i = 0; i < EDITOR_MAX_SIZE; i++) ed_buf[i] = 0;
@@ -225,7 +235,7 @@ void cmd_edit(const char* args) {
             ed_set_cursor();
         } else if (ascii == 17 || ascii == 27) {
             break;
-        } else if (ascii == 13) {
+        } else if (ascii == 13 || ascii == 10) {
             int render_pos = line_start(ed_cursor);
             ed_insert('\n');
             if (ensure_visible()) { ed_render_all(); }

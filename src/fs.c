@@ -24,8 +24,10 @@ static int memcmp(const void* a, const void* b, int n) {
 }
 
 filesystem_t fs;
+uint8_t fs_initialized = 0;
 
 void fs_init(void) {
+    if (fs_initialized) return;
     uint8_t boot[512];
     read_sector(0, boot);
 
@@ -42,11 +44,9 @@ void fs_init(void) {
     fs.first_data_sector = fs.root_dir_lba + fs.root_dir_sectors;
     fs.total_clusters = (fs.total_sectors - fs.first_data_sector) / fs.sectors_per_cluster;
 
-    for (uint16_t i = 0; i < fs.sectors_per_fat; i++)
-        read_sector(fs.reserved_sectors + i, fs.sectors_per_fat_buf + i * 512);
-
-    for (uint16_t i = 0; i < fs.root_dir_sectors; i++)
-        read_sector(fs.root_dir_lba + i, fs.root_dir_buf + i * 512);
+    read_sectors(fs.reserved_sectors, fs.sectors_per_fat, fs.sectors_per_fat_buf);
+    read_sectors(fs.root_dir_lba, fs.root_dir_sectors, fs.root_dir_buf);
+    fs_initialized = 1;
 }
 
 uint16_t fs_cluster_to_lba(uint16_t cluster) {
@@ -131,6 +131,7 @@ static int find_file(const char* name, uint16_t* out_cluster, uint32_t* out_size
 }
 
 void fs_list_dir(void) {
+    if (!fs_initialized) fs_init();
     int max = fs.root_dir_sectors * 512 / 32;
     int count = 0;
 
@@ -180,6 +181,7 @@ void fs_list_dir(void) {
 }
 
 uint8_t fs_read_file(const char* name, void* buf, uint16_t max) {
+    if (!fs_initialized) fs_init();
     uint16_t cluster;
     uint32_t size;
 
@@ -187,21 +189,40 @@ uint8_t fs_read_file(const char* name, void* buf, uint16_t max) {
 
     uint32_t read = 0;
     while (1) {
-        uint32_t lba = fs_cluster_to_lba(cluster);
-        uint8_t sector[512];
+        uint16_t start = cluster;
+        uint16_t count = 1;
+        uint16_t walk = cluster;
 
-        if (read_sector(lba, sector)) return 1;
+        while (1) {
+            uint16_t next = fs_next_cluster(walk);
+            if (next >= FAT_EOF) { walk = next; break; }
+            if (next != walk + 1) { walk = next; break; }
+            count++;
+            walk = next;
+        }
 
-        uint16_t to_copy = 512;
-        if (read + to_copy > max) to_copy = max - read;
-        if (read + to_copy > size) to_copy = size - read;
+        uint32_t lba = fs_cluster_to_lba(start);
+        uint16_t limit_sects = ((uint32_t)(max - read) + 511) / 512;
+        uint16_t need_sects = ((size - read) + 511) / 512;
+        if (count > limit_sects) count = limit_sects;
+        if (count > need_sects) count = need_sects;
 
-        memcpy((uint8_t*)buf + read, sector, to_copy);
-        read += to_copy;
+        if (count > 1) {
+            if (read_sectors(lba, count, (uint8_t*)buf + read)) return 1;
+        } else {
+            uint8_t sector[512];
+            if (read_sector(lba, sector)) return 1;
+            uint16_t to_copy = 512;
+            if (read + to_copy > max) to_copy = max - read;
+            if (read + to_copy > size) to_copy = size - read;
+            memcpy((uint8_t*)buf + read, sector, to_copy);
+        }
 
-        cluster = fs_next_cluster(cluster);
-        if (cluster >= FAT_EOF) break;
-        if (cluster == FAT_FREE) return 1;
+        read += count * 512;
+        if (read > size) { read = size; break; }
+        if (read >= max) break;
+        if (walk >= FAT_EOF) break;
+        cluster = walk;
     }
 
     return 0;
@@ -220,6 +241,7 @@ static void flush_root(void) {
 }
 
 uint8_t fs_write_file(const char* name, const void* data, uint32_t size) {
+    if (!fs_initialized) fs_init();
     uint16_t old_cluster;
     uint32_t old_size;
     int dir_slot = find_file(name, &old_cluster, &old_size);
@@ -320,6 +342,7 @@ uint8_t fs_write_file(const char* name, const void* data, uint32_t size) {
 }
 
 uint8_t fs_delete_file(const char* name) {
+    if (!fs_initialized) fs_init();
     uint16_t cluster;
     uint32_t size;
     if (find_file(name, &cluster, &size) < 0) return 1;
@@ -379,6 +402,7 @@ uint8_t fs_delete_file(const char* name) {
 }
 
 uint8_t fs_copy(const char* src, const char* dst, void* buf, uint16_t buf_size) {
+    if (!fs_initialized) fs_init();
     uint16_t cluster;
     uint32_t size;
     if (find_file(src, &cluster, &size) < 0) return 1;
@@ -388,6 +412,7 @@ uint8_t fs_copy(const char* src, const char* dst, void* buf, uint16_t buf_size) 
 }
 
 uint8_t fs_rename(const char* old_name, const char* new_name) {
+    if (!fs_initialized) fs_init();
     uint16_t cluster;
     uint32_t size;
     int slot = find_file(old_name, &cluster, &size);
