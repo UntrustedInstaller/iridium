@@ -5,6 +5,5 @@ build/
 agents/
 
 # Non-source assets
-IridiumOS.svg
 design-docs.md
 RELEASE_NOTES.md
