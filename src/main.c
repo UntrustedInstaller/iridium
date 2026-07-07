@@ -219,20 +219,23 @@ uint8_t api_fs_write_file(const char* name, uint16_t src_off, uint16_t size) {
     uint16_t copy_size = size < sizeof(mod_buf) ? size : sizeof(mod_buf);
 
     __asm__ __volatile__ (
-        "movw %%ds, %%bx\n\t"
-        "movw %%es, %%ax\n\t"
-        "movw %%ax, %%ds\n\t"
-        "movw %%bx, %%es\n\t"
-        "movw %0, %%si\n\t"
-        "movw %1, %%di\n\t"
-        "movw %2, %%cx\n\t"
         "cld\n\t"
-        "rep movsb\n\t"
-        "movw %%bx, %%ds\n\t"
-        "movw %%ax, %%es\n\t"
+        "pushw %%ds\n\t"          // Save DS (0x1000 kernel)
+        "pushw %%es\n\t"          // Save ES (0x2000 module)
+        "popw %%ds\n\t"           // DS = 0x2000 (module seg — source)
+        "popw %%es\n\t"           // ES = 0x1000 (kernel seg — dest)
+        "movw %0, %%si\n\t"      // SI = src_off (within module seg)
+        "movw %1, %%di\n\t"      // DI = mod_buf_off (within kernel BSS)
+        "movw %2, %%cx\n\t"      // CX = copy_size
+        "rep movsb\n\t"          // 0x2000:src_off → 0x1000:mod_buf
+        // Swap back to restore DS=kernel, ES=module
+        "pushw %%ds\n\t"
+        "pushw %%es\n\t"
+        "popw %%ds\n\t"
+        "popw %%es\n\t"
         :
-        : "g"(src_off), "g"((uint16_t)(uint32_t)mod_buf), "g"(copy_size)
-        : "ax", "bx", "si", "di", "cx", "memory"
+        : "r"(src_off), "r"((uint16_t)(uint32_t)mod_buf), "r"(copy_size)
+        : "si", "di", "cx", "memory"
     );
 
     return fs_write_file(name, mod_buf, size);

@@ -411,6 +411,11 @@ api_fname   times 13 db 0
 global kernel_mem_end
 kernel_mem_end dw 0
 
+; INT 60h handler stack save area (accessed via CS override before DS is set)
+saved_handler_ss  dw 0
+saved_handler_sp  dw 0
+saved_handler_ax  dw 0
+
 ; =====================================================================
 ;    INT 60H API HANDLER — Module-to-Kernel API
 ; =====================================================================
@@ -440,10 +445,22 @@ int60_handler:
     push si
     push di
 
-    push ax             ; save AX — print_int (fn 8) passes its value here
+    ; Save module's SS:SP and AX before switching to kernel stack.
+    ; CS=0x1000 (kernel code), so CS-override reaches the variables.
+    mov [cs:saved_handler_ss], ss
+    mov [cs:saved_handler_sp], sp
+    mov [cs:saved_handler_ax], ax
+
+    ; Switch to kernel stack so that DS=SS=0x1000.
+    ; GCC -m16 generates code that assumes DS == SS; CPU C functions
+    ; that take addresses of stack variables (fs_read_file etc.) will
+    ; dereference pointers through DS, so DS must equal the stack segment.
     mov ax, 0x1000
     mov ds, ax
-    pop ax              ; restore AX so print_int etc. see the right value
+    mov ss, ax
+    mov sp, 0xFE00
+
+    mov ax, [saved_handler_ax]
 
     cmp cx, 0
     je .print_str
@@ -684,6 +701,12 @@ int60_handler:
     jmp .done
 
 .done:
+    ; Restore module's stack (module SS:SP saved at handler entry)
+    cli
+    mov ss, [saved_handler_ss]
+    mov sp, [saved_handler_sp]
+    sti
+
     pop di
     pop si
     pop ds
