@@ -13,8 +13,9 @@
   - BSS (zeroed at startup)
   - Stack at top of segment (SP = 0xFFF0)
 0x2000:0x0000     Module load segment (lcall target)
-  - 0x0000        module_main entry
-  - 0xFC00        Argument string (copied by kernel)
+   - 0x0000        module_main entry
+   - 0xFE00        Module stack (top, grows down; DS=SS required by -m16)
+   - 0xFC00        Argument string (copied by kernel before call)
 0x10000+           Free / available to BIOS
 ```
 
@@ -52,15 +53,28 @@ Commands can be added to `cmd_table[]` in `main.c`. Update `help_sections[]` to 
 
 ## Module API (INT 60h)
 
-The kernel installs an interrupt handler at IVT slot 0x60 (offset 0x0180). Modules set CX = function number and call `int 0x60`. The handler runs in kernel segment context. See MODULE.md for the table.
+The kernel installs an interrupt handler at IVT slot 0x60 (offset 0x0180). Modules set CX = function number and call `int 0x60`. The handler runs in kernel segment context.
+
+API functions (see MODULE.md for full table):
+
+| CX | Function |
+|----|----------|
+| 0–4 | Display: print_str, print_char, get_key, clear_screen, gotoxy |
+| 5–6 | Disk: read_sector, write_sector |
+| 7–8 | Utility: get_cursor, print_int |
+| 9–10 | **Filesystem**: fs_read_file, fs_write_file (module-safe, copies via rep movsb through mod_buf) |
+| 11–12 | Colour: get_cur_col, set_cur_col |
+| 13–14 | System: get_mem_size, get_kernel_end |
+
+Calls 9–10 are the most complex: they copy the filename from the module segment to a kernel buffer, call the C FS functions, and copy data across segments via `rep movsb` through the kernel's `mod_buf` staging area. See `api_fs_read_file()` / `api_fs_write_file()` in `src/main.c`.
 
 ## Notable Files
 
 | File | What it does |
 |------|-------------|
 | `src/boot.asm` | Stage 1 bootloader — loads kernel, jumps to it |
-| `src/kernel.asm` | Stage 2 entry, HAL (print, disk I/O, scroll), INT 60h handler |
-| `src/main.c` | Shell, command table, module loading, HAL wrappers |
-| `src/fs.c` | FAT12 driver — read/write/delete/rename/copy/list |
-| `src/module_entry.asm` | Module stub — zeroes BSS, calls module_main() |
+| `src/kernel.asm` | Stage 2 entry, HAL (print, disk I/O, scroll), INT 60h handler (CX=0-14), multi-sector read |
+| `src/main.c` | Shell, command table, module loading, HAL wrappers, FS API bridge (api_fs_read/write_file) |
+| `src/fs.c` | FAT12 driver — read/write/delete/rename/copy/list, multi-sector read |
+| `src/module_entry.asm` | Module stub — saves kernel SS:SP, sets DS=SS=0x2000, zeroes BSS, calls module_main() |
 | `linker.ld` | Kernel linker script — ELF, BSS symbols exported |
