@@ -25,6 +25,8 @@ static int memcmp(const void* a, const void* b, int n) {
 
 filesystem_t fs;
 uint8_t fs_initialized = 0;
+static uint8_t wr_sector[512];
+static uint8_t rd_sector[512];
 
 void fs_init(void) {
     if (fs_initialized) return;
@@ -210,12 +212,11 @@ uint8_t fs_read_file(const char* name, void* buf, uint16_t max) {
         if (count > 1) {
             if (read_sectors(lba, count, (uint8_t*)buf + read)) return 1;
         } else {
-            uint8_t sector[512];
-            if (read_sector(lba, sector)) return 1;
+            if (read_sector(lba, rd_sector)) return 1;
             uint16_t to_copy = 512;
             if (read + to_copy > max) to_copy = max - read;
             if (read + to_copy > size) to_copy = size - read;
-            memcpy((uint8_t*)buf + read, sector, to_copy);
+            memcpy((uint8_t*)buf + read, rd_sector, to_copy);
         }
 
         read += count * 512;
@@ -285,15 +286,14 @@ uint8_t fs_write_file(const char* name, const void* data, uint32_t size) {
         prev = free_c;
 
         uint32_t lba = fs_cluster_to_lba(free_c);
-        uint8_t sector[512];
-        memset(sector, 0, 512);
+        memset(wr_sector, 0, 512);
 
         uint32_t off = i * 512;
         uint32_t to_copy = size - off;
         if (to_copy > 512) to_copy = 512;
-        memcpy(sector, (const uint8_t*)data + off, to_copy);
+        memcpy(wr_sector, (const uint8_t*)data + off, to_copy);
 
-        if (write_sector(lba, sector)) return 1;
+        if (write_sector(lba, wr_sector)) return 1;
 
         alloc_start = free_c + 1;
         if (alloc_start > fs.total_clusters + 1) alloc_start = 2;

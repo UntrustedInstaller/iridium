@@ -68,6 +68,7 @@ static uint8_t bf_load_saved(void) {
         if (buf[i] == '+' || buf[i] == '-' || buf[i] == '<' || buf[i] == '>' ||
             buf[i] == '[' || buf[i] == ']' || buf[i] == '.' || buf[i] == ',') {
             bf_interpret(buf);
+            print_str("\r\n");
             return 1;
         }
     }
@@ -81,7 +82,6 @@ void module_main(void) {
         if (!bf_load_saved()) {
             print_str("BF: No saved program. Use 'edit HELLO.BF' to create one.\r\n");
         }
-        print_str("\r\n");
         return;
     }
 
@@ -98,8 +98,9 @@ void module_main(void) {
             return;
         }
         bf_interpret(buf);
+        print_str("\r\n");
     } else {
         bf_interpret(args);
+        print_str("\r\n");
     }
-    print_str("\r\n");
 }

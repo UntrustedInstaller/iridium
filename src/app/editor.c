@@ -96,7 +96,7 @@ static void ed_render_status(void) {
     print_int(ed_cursor - ls + 1);
 
     gotoxy(0, 24);
-    print_str("Ctrl+S=Save  Ctrl+Q=Quit  INS");
+    print_str("F2=Save  Ctrl+Q=Quit  INS");
 }
 
 static void ed_set_cursor(void) {
@@ -228,7 +228,7 @@ void module_main(void) {
         uint8_t ascii = key & 0xFF;
         uint8_t scan = (key >> 8) & 0xFF;
 
-        if (ascii == 19) {
+        if (ascii == 19 || (ascii == 0 && scan == 0x3C)) {
             ed_save(ed_filename);
             ed_modified = 0;
             ed_render_status();

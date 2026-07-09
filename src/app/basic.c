@@ -357,7 +357,40 @@ static void cmd_list(void) {
     }
 }
 
+static void auto_load(const char* fname) {
+    clear_prog();
+    my_memset(load_buf, 0, sizeof(load_buf));
+    if (fs_read_file(fname, (uint8_t*)load_buf, sizeof(load_buf) - 1)) {
+        print_str("?LOAD FAILED\r\n");
+        return;
+    }
+    int i = 0;
+    while (load_buf[i]) {
+        int line_num = 0;
+        while (load_buf[i] >= '0' && load_buf[i] <= '9') {
+            line_num = line_num * 10 + (load_buf[i] - '0');
+            i++;
+        }
+        while (load_buf[i] == ' ') i++;
+        char text[MAX_LINE];
+        int ti = 0;
+        while (load_buf[i] && load_buf[i] != '\r' && load_buf[i] != '\n' && ti < MAX_LINE - 1) {
+            text[ti++] = load_buf[i++];
+        }
+        text[ti] = '\0';
+        if (line_num > 0) add_line(line_num, text);
+        while (load_buf[i] == '\r' || load_buf[i] == '\n') i++;
+    }
+    print_str("LOADED.\r\n");
+    run_prog();
+}
+
 void module_main(void) {
+    const char* args = MODULE_ARGS;
+    if (args && args[0]) {
+        auto_load(args);
+    }
+
     char line[MAX_LINE];
     while (1) {
         print_str("\r\nREADY.\r\n> ");
@@ -395,35 +428,37 @@ void module_main(void) {
         else if ((rest = match_word(s, "REM"))) { }
         else if ((rest = match_word(s, "SAVE"))) {
             skip_spaces(&rest);
+            char fname[64];
+            int fi = 0;
             if (*rest == '"') {
                 rest++;
-                char fname[64];
-                int fi = 0;
                 while (*rest && *rest != '"' && fi < 63) fname[fi++] = *rest++;
-                fname[fi] = '\0';
-                int out_len = 0;
-                int pos = 0;
-                while (pos < prog_len) {
-                    uint16_t ln = (uint8_t)program[pos] << 8 | (uint8_t)program[pos + 1];
-                    char num_buf[16];
-                    int ni = 0, n = ln;
-                    if (n == 0) { num_buf[ni++] = '0'; }
-                    else { while (n) { num_buf[ni++] = '0' + (n % 10); n /= 10; } }
-                    for (int j = ni - 1; j >= 0; j--) load_buf[out_len++] = num_buf[j];
-                    load_buf[out_len++] = ' ';
-                    int end = next_line(pos);
-                    for (int j = pos + 2; j < end && program[j]; j++) load_buf[out_len++] = program[j];
-                    load_buf[out_len++] = '\r';
-                    load_buf[out_len++] = '\n';
-                    if (out_len > (int)sizeof(load_buf) - 20) break;
-                    pos = end;
-                }
-                load_buf[out_len] = '\0';
-                if (fs_write_file(fname, (uint8_t*)load_buf, out_len)) {
-                    print_str("?SAVE FAILED\r\n");
-                } else {
-                    print_str("SAVED.\r\n");
-                }
+            } else {
+                while (*rest && *rest != ' ' && fi < 63) fname[fi++] = *rest++;
+            }
+            fname[fi] = '\0';
+            int out_len = 0;
+            int pos = 0;
+            while (pos < prog_len) {
+                uint16_t ln = (uint8_t)program[pos] << 8 | (uint8_t)program[pos + 1];
+                char num_buf[16];
+                int ni = 0, n = ln;
+                if (n == 0) { num_buf[ni++] = '0'; }
+                else { while (n) { num_buf[ni++] = '0' + (n % 10); n /= 10; } }
+                for (int j = ni - 1; j >= 0; j--) load_buf[out_len++] = num_buf[j];
+                load_buf[out_len++] = ' ';
+                int end = next_line(pos);
+                for (int j = pos + 2; j < end && program[j]; j++) load_buf[out_len++] = program[j];
+                load_buf[out_len++] = '\r';
+                load_buf[out_len++] = '\n';
+                if (out_len > (int)sizeof(load_buf) - 20) break;
+                pos = end;
+            }
+            load_buf[out_len] = '\0';
+            if (fs_write_file(fname, (uint8_t*)load_buf, out_len)) {
+                print_str("?SAVE FAILED\r\n");
+            } else {
+                print_str("SAVED.\r\n");
             }
         }
         else if ((rest = match_word(s, "GOTO"))) {
@@ -438,12 +473,16 @@ void module_main(void) {
         }
         else if ((rest = match_word(s, "LOAD"))) {
             skip_spaces(&rest);
+            char fname[64];
+            int fi = 0;
             if (*rest == '"') {
                 rest++;
-                char fname[64];
-                int fi = 0;
                 while (*rest && *rest != '"' && fi < 63) fname[fi++] = *rest++;
-                fname[fi] = '\0';
+            } else {
+                while (*rest && *rest != ' ' && fi < 63) fname[fi++] = *rest++;
+            }
+            fname[fi] = '\0';
+            if (fname[0]) {
                 clear_prog();
                 my_memset(load_buf, 0, sizeof(load_buf));
                 if (fs_read_file(fname, (uint8_t*)load_buf, sizeof(load_buf) - 1)) {

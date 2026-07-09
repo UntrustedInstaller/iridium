@@ -10,7 +10,7 @@ _start:
     ; The return address from lcall is on the kernel's stack at SS:SP.
     push ss
     pop ax               ; AX = SS = 0x1000
-    mov bx, sp           ; BX = SP (= 0xFFEA after lcall pushed 6 bytes)
+    mov bx, sp           ; BX = SP (after o32 lcall pushed 8 bytes)
 
     ; Set up segment registers for the module's segment (0x2000)
     ; CRITICAL: DS must equal SS so that GCC's -m16 code correctly dereferences

@@ -160,33 +160,30 @@ static void call_module_buf(const char* args) {
         : "ax", "cx", "si", "di", "memory"
     );
 
-    if (args && args[0]) {
-        args_off = (uint16_t)(uint32_t)args;
-        __asm__ __volatile__(
-            "cld\n\t"
-            "pushw %%es\n\t"
-            "movw $0x2000, %%ax\n\t"
-            "movw %%ax, %%es\n\t"
-            "movw $0xFC00, %%di\n\t"
-            "movw %0, %%si\n\t"
-            "1:\n\t"
-            "lodsb\n\t"
-            "stosb\n\t"
-            "testb %%al, %%al\n\t"
-            "jnz 1b\n\t"
-            "popw %%es\n\t"
-            :
-            : "r"(args_off)
-            : "ax", "si", "di", "memory"
-        );
-    }
+    args_off = (uint16_t)(uint32_t)args;
+    __asm__ __volatile__(
+        "cld\n\t"
+        "pushw %%es\n\t"
+        "movw $0x2000, %%ax\n\t"
+        "movw %%ax, %%es\n\t"
+        "movw $0xFC00, %%di\n\t"
+        "movw %0, %%si\n\t"
+        "1:\n\t"
+        "lodsb\n\t"
+        "stosb\n\t"
+        "testb %%al, %%al\n\t"
+        "jnz 1b\n\t"
+        "popw %%es\n\t"
+        :
+        : "r"(args_off)
+        : "ax", "si", "di", "memory"
+    );
 
     __asm__ __volatile__("lcall $0x2000, $0x0000" : : : "memory");
 }
 
 static int try_load_and_run(const char* name, const char* args);
 
-static void cmd_about(const char* args)     { try_load_and_run("about", ""); }
 static void cmd_brainfuck(const char* args) { try_load_and_run("brainfuck", args); }
 static void cmd_edit(const char* args)      { try_load_and_run("edit", args); }
 static void cmd_basic(const char* args)     { try_load_and_run("basic", args); }
@@ -203,14 +200,15 @@ uint8_t api_fs_read_file(const char* name, uint16_t dest_off, uint16_t max) {
     if (fs_read_file(name, mod_buf, max)) return 1;
 
     __asm__ __volatile__ (
-        "movw %0, %%si\n\t"
-        "movw %1, %%di\n\t"
-        "movw %2, %%cx\n\t"
         "cld\n\t"
+        "pushw %%es\n\t"
+        "movw $0x2000, %%ax\n\t"
+        "movw %%ax, %%es\n\t"
         "rep movsb\n\t"
+        "popw %%es\n\t"
         :
-        : "g"((uint16_t)(uint32_t)mod_buf), "g"(dest_off), "g"(max)
-        : "si", "di", "cx", "memory"
+        : "S"((uint16_t)(uint32_t)mod_buf), "D"(dest_off), "c"(max)
+        : "ax", "memory"
     );
     return 0;
 }
@@ -220,22 +218,18 @@ uint8_t api_fs_write_file(const char* name, uint16_t src_off, uint16_t size) {
 
     __asm__ __volatile__ (
         "cld\n\t"
-        "pushw %%ds\n\t"          // Save DS (0x1000 kernel)
-        "pushw %%es\n\t"          // Save ES (0x2000 module)
-        "popw %%ds\n\t"           // DS = 0x2000 (module seg — source)
-        "popw %%es\n\t"           // ES = 0x1000 (kernel seg — dest)
-        "movw %0, %%si\n\t"      // SI = src_off (within module seg)
-        "movw %1, %%di\n\t"      // DI = mod_buf_off (within kernel BSS)
-        "movw %2, %%cx\n\t"      // CX = copy_size
-        "rep movsb\n\t"          // 0x2000:src_off → 0x1000:mod_buf
-        // Swap back to restore DS=kernel, ES=module
         "pushw %%ds\n\t"
         "pushw %%es\n\t"
-        "popw %%ds\n\t"
-        "popw %%es\n\t"
+        "popw %%ds\n\t"           // DS = 0x2000 (module seg — source)
+        "popw %%es\n\t"           // ES = 0x1000 (kernel seg — dest)
+        "rep movsb\n\t"          // 0x2000:SI → 0x1000:DI
+        "pushw %%ds\n\t"
+        "pushw %%es\n\t"
+        "popw %%ds\n\t"           // DS = 0x1000
+        "popw %%es\n\t"           // ES = 0x2000
         :
-        : "r"(src_off), "r"((uint16_t)(uint32_t)mod_buf), "r"(copy_size)
-        : "si", "di", "cx", "memory"
+        : "S"(src_off), "D"((uint16_t)(uint32_t)mod_buf), "c"(copy_size)
+        : "memory"
     );
 
     return fs_write_file(name, mod_buf, size);
@@ -359,9 +353,8 @@ void render_pal_mtx(void) {
 }
 
 void print_hex_byte(uint8_t byte) {
-    const char hex_digits[] = "0123456789ABCDEF";
-    print_char(hex_digits[(byte>>4) & 0x0F]);
-    print_char(hex_digits[byte & 0x0F]);
+    print_char("0123456789ABCDEF"[(byte>>4) & 0x0F]);
+    print_char("0123456789ABCDEF"[byte & 0x0F]);
 }
 
 void print_hex_word(uint16_t word) {
@@ -372,7 +365,7 @@ void print_hex_word(uint16_t word) {
 void hexdump(const void* addr, int count) {
     const uint8_t* ptr = (const uint8_t*)addr;
     for (int i = 0; i < count; i += 16) {
-        print_hex_word((uint16_t)(uint32_t)(ptr + i));
+        print_hex_word((uint16_t)i);
         print_str(": ");
         for (int j = 0; j < 16; j++) {
             if (i + j < count) { print_hex_byte(ptr[i + j]); print_char(' '); }
@@ -432,7 +425,6 @@ static const struct cli_command cmd_table[] = {
     // ---- Apps ----
     {"palette",  7, cmd_palette, "Show color palette"},
     {"theme",    5, cmd_theme,   "Change color scheme"},
-    {"about",    5, cmd_about,   "About this OS"},
     {"brainfuck", 9, cmd_brainfuck, "Run Brainfuck code"},
     {"edit",     4, cmd_edit,    "Text editor"},
     {"basic",    5, cmd_basic,   "BASIC interpreter"},

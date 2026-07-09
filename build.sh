@@ -30,7 +30,7 @@ echo "[*] Compiling application modules from src/app/..."
 APP_OBJECTS=""
 
 # Modules that are loadable (not linked into kernel)
-LOADABLE_MODULES="snake bf editor basic about"
+LOADABLE_MODULES="snake bf editor basic testr"
 
 for c_file in src/app/*.c; do
     base_name=$(basename "$c_file" .c)
@@ -90,7 +90,6 @@ build_module "snake"
 build_module "bf"
 build_module "editor"
 build_module "basic"
-build_module "about"
 
 # 9. Seed files into the FAT12 filesystem
 echo "[*] Seeding files into FAT12 filesystem..."
@@ -106,16 +105,14 @@ mcopy -i build/os.img build/hello.bf  ::HELLO.BF     2>/dev/null
 mcopy -i build/os.img build/snake.mod ::SNAKE.BIN    2>/dev/null
 mcopy -i build/os.img build/bf.mod     ::BRAINFUC.BIN 2>/dev/null
 mcopy -i build/os.img build/editor.mod ::EDIT.BIN     2>/dev/null
-mcopy -i build/os.img build/basic.mod  ::BASIC.BIN    2>/dev/null
-mcopy -i build/os.img build/about.mod  ::ABOUT.BIN    2>/dev/null
-
-echo "[+] Files seeded: CONFIG.BIN, HELLO.BF, SNAKE.BIN, BRAINFUC.BIN, EDIT.BIN, BASIC.BIN, ABOUT.BIN"
+mcopy -i build/os.img build/basic.mod  ::BASIC.BIN     2>/dev/null
+echo "[+] Files seeded: CONFIG.BIN, HELLO.BF, SNAKE.BIN, BRAINFUC.BIN, EDIT.BIN, BASIC.BIN"
 
 echo "[+] Build complete: build/os.img created successfully!"
 echo "----------------------------------------------"
 
 # 7. QEMU test 
-read -p "Would you like to test OsmiumOS in QEMU right now? (y/N): " run_qemu
+read -p "Launch QEMU? (y/N): " run_qemu
 if [[ "$run_qemu" =~ ^[Yy]$ ]]; then
     echo "[*] Launching QEMU..."
     qemu-system-i386 -fda build/os.img
@@ -124,7 +121,7 @@ fi
 echo "----------------------------------------------"
 
 # 8. Floppy Disk Burner
-read -p "Would you like to write this build to a physical floppy disk? (y/N): " write_floppy
+read -p "Write to floppy? (y/N): " write_floppy
 if [[ "$write_floppy" =~ ^[Yy]$ ]]; then
     echo ""
     echo "Current connected block devices:"

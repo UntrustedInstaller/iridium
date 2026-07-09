@@ -444,6 +444,7 @@ int60_handler:
     push ds
     push si
     push di
+    push es
 
     ; Save module's SS:SP and AX before switching to kernel stack.
     ; CS=0x1000 (kernel code), so CS-override reaches the variables.
@@ -458,7 +459,7 @@ int60_handler:
     mov ax, 0x1000
     mov ds, ax
     mov ss, ax
-    mov sp, 0xFE00
+    mov sp, 0xFC00
 
     mov ax, [saved_handler_ax]
 
@@ -707,6 +708,7 @@ int60_handler:
     mov sp, [saved_handler_sp]
     sti
 
+    pop es
     pop di
     pop si
     pop ds

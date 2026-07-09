@@ -3,6 +3,8 @@ build/
 *.o
 *.bin
 agents/
+session-*.md
+AGENTS.md
 
 # Non-source assets
 design-docs.md

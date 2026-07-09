@@ -11,6 +11,21 @@ static uint8_t fx, fy, otx, oty;
 static uint16_t sscore;
 static uint16_t rng_state;
 
+static void poke_char(uint8_t col, uint8_t row, char c) {
+    uint16_t off = (row * 80 + col) * 2;
+    uint8_t attr = get_cur_col();
+    uint16_t cw = ((uint16_t)attr << 8) | (uint8_t)c;
+    __asm__ __volatile__(
+        "pushw %%es\n\t"
+        "movw $0xB800, %%bx\n\t"
+        "movw %%bx, %%es\n\t"
+        "movw %0, %%bx\n\t"
+        "movw %1, %%es:(%%bx)\n\t"
+        "popw %%es\n\t"
+        : : "b"(off), "a"(cw) : "memory"
+    );
+}
+
 static uint16_t rng(void) {
     rng_state ^= rng_state << 7;
     rng_state ^= rng_state >> 9;
@@ -77,8 +92,14 @@ void module_main(void) {
     bx[1] = 11; by[1] = 12;
     bx[2] = 10; by[2] = 12;
 
-    for (int r = 0; r < 25; r++) { gotoxy(0, r); print_char('|'); gotoxy(79, r); print_char('|'); }
-    for (int c = 1; c < 79; c++) { gotoxy(c, 0); print_char('='); gotoxy(c, 24); print_char('='); }
+    for (int r = 0; r < 23; r++) { gotoxy(0, r); print_char('|'); gotoxy(79, r); print_char('|'); }
+    for (int c = 1; c < 79; c++) { gotoxy(c, 0); print_char('='); }
+    gotoxy(0, 23); print_char('|');
+    gotoxy(79, 23); print_char('|');
+
+    gotoxy(0, 24); print_char('|');
+    for (int c = 1; c < 79; c++) { gotoxy(c, 24); print_char('='); }
+    poke_char(79, 24, '|');
 
     gotoxy(25, 0); print_str("SNAKE");
     gotoxy(0, 24); print_str("Arrows=Move Q=Quit");
