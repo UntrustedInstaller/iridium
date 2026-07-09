@@ -17,8 +17,7 @@ void kernel_main(void) {
     keyboard_init();
 
     __asm__("sti");
-
-    terminal_initialize();
+terminal_initialize();
 
     terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLUE));
     terminal_write("IridiumOS 32-bit\n");
