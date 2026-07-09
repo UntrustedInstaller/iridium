@@ -6,6 +6,7 @@
 #include "pit.h"
 #include "keyboard.h"
 #include "shell.h"
+#include "multiboot.h"
 
 void kernel_main(void) {
     gdt_init();
@@ -22,7 +23,26 @@ void kernel_main(void) {
     terminal_write("IridiumOS 32-bit\n");
     terminal_write("Osmium's periodic neighbor\n\n");
     terminal_write("Pouring 0x0D cups of coffee... done.\n");
-    terminal_write("Counting RAM... 639. 640. Wait. 639.\n");
+    terminal_write("Counting RAM... ");
+    char buf[32];
+    int len = 0;
+    uint32_t mem = multiboot_get_total_memory_kb();
+    if (mem >= 1024) {
+        uint32_t mib = mem / 1024;
+        if (mib >= 100) { buf[len++] = '0' + mib / 100; mib %= 100; }
+        if (mib >= 10)  { buf[len++] = '0' + mib / 10; mib %= 10; }
+        buf[len++] = '0' + mib;
+        buf[len++] = 'M'; buf[len++] = 'i'; buf[len++] = 'B';
+    } else {
+        uint32_t n = mem;
+        if (n >= 100) { buf[len++] = '0' + n / 100; n %= 100; }
+        if (n >= 10)  { buf[len++] = '0' + n / 10; n %= 10; }
+        buf[len++] = '0' + n;
+        buf[len++] = 'K';
+    }
+    buf[len] = '\0';
+    terminal_write(buf);
+    terminal_write(" detected.\n");
     terminal_write("Making sure the purple is purple enough. It is.\n");
     terminal_write("Spinning up the thing that spins up things... done.\n\n");
 

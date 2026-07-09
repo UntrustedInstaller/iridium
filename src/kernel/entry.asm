@@ -11,14 +11,19 @@ section .text
 
 global _start
 extern kernel_main
+extern multiboot_init
 
 _start:
     ; Set up a stack
     mov esp, stack_top
 
-    ; Push multiboot info address (EBX) and magic (EAX) as arguments to kernel_main
+    ; Save multiboot magic (EAX) and info pointer (EBX)
     push ebx
     push eax
+    call multiboot_init
+    add esp, 8
+
+    ; Call kernel_main
     call kernel_main
 
     ; If kernel_main returns, loop forever

@@ -29,7 +29,6 @@ static void terminal_scroll(void) {
     for (uint16_t x = 0; x < VGA_WIDTH; x++) {
         vga_buffer[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = vga_entry(' ', terminal_color);
     }
-    terminal_update_cursor();
 }
 
 void terminal_putchar(char c) {
@@ -79,6 +78,11 @@ void terminal_initialize(void) {
     outb(0x3C9, 22);
     outb(0x3C9, 11);
     outb(0x3C9, 32);
+
+    outb(0x3D4, 0x0A);
+    outb(0x3D5, 0x0E);
+    outb(0x3D4, 0x0B);
+    outb(0x3D5, 0x0F);
 
     terminal_color = vga_entry_color(VGA_WHITE, VGA_BLUE);
     terminal_clear();
