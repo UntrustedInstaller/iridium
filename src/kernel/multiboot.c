@@ -29,31 +29,38 @@ void multiboot_init(uint32_t magic, uint32_t addr) {
     total_memory_kb = lower_memory_kb + upper_memory_kb;
 
     if (mbi->flags & MULTIBOOT_FLAG_MMAP) {
-    }
+        uint32_t mmap_addr = mbi->mmap_addr;
+        uint32_t mmap_length = mbi->mmap_length;
+        multiboot_mmap_entry_t* entry = (multiboot_mmap_entry_t*)mmap_addr;
 
+        while ((uint32_t)entry < mmap_addr + mmap_length && mmap_entry_count < MAX_MMAP_ENTRIES) {
+            memory_map[mmap_entry_count++] = *entry;
+            entry = (multiboot_mmap_entry_t*)((uint32_t)entry + entry->size + sizeof(entry->size));
+        }
     }
+}
 
-uint32_t multiboot_get_total_memory_kb(void) {
+__attribute__((unused)) uint32_t multiboot_get_total_memory_kb(void) {
     return total_memory_kb;
 }
 
-uint32_t multiboot_get_lower_memory_kb(void) {
+__attribute__((unused)) uint32_t multiboot_get_lower_memory_kb(void) {
     return lower_memory_kb;
 }
 
-uint32_t multiboot_get_upper_memory_kb(void) {
+__attribute__((unused)) uint32_t multiboot_get_upper_memory_kb(void) {
     return upper_memory_kb;
 }
 
-int multiboot_has_mmap(void) {
+__attribute__((unused)) int multiboot_has_mmap(void) {
     return mmap_entry_count > 0;
 }
 
-int multiboot_get_mmap_count(void) {
+__attribute__((unused)) int multiboot_get_mmap_count(void) {
     return mmap_entry_count;
 }
 
-multiboot_mmap_entry_t* multiboot_get_mmap_entry(int idx) {
+__attribute__((unused)) multiboot_mmap_entry_t* multiboot_get_mmap_entry(int idx) {
     if (idx >= 0 && idx < mmap_entry_count) {
         return &memory_map[idx];
     }

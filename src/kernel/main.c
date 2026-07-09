@@ -17,7 +17,8 @@ void kernel_main(void) {
     keyboard_init();
 
     __asm__("sti");
-terminal_initialize();
+
+    terminal_initialize();
 
     terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLUE));
     terminal_write("IridiumOS 32-bit\n");
@@ -47,9 +48,9 @@ terminal_initialize();
     pmm_init();
 
     terminal_write("Physical frames: ");
-    len = 0;
+    int len2 = 0;
     uint32_t free = pmm_get_free_frames();
-    if (free == 0) { buf[len++] = '0'; }
+    if (free == 0) { buf[len2++] = '0'; }
     else {
         while (free > 0) {
             char tmp[16];
@@ -57,12 +58,12 @@ terminal_initialize();
             uint32_t n = free;
             if (n == 0) tmp[j++] = '0';
             while (n > 0) { tmp[j++] = '0' + n % 10; n /= 10; }
-            while (j > 0) buf[len++] = tmp[--j];
+            while (j > 0) buf[len2++] = tmp[--j];
             free = 0;
         }
     }
-    buf[len++] = ' '; buf[len++] = 'f'; buf[len++] = 'r'; buf[len++] = 'e'; buf[len++] = 'e';
-    buf[len] = '\0';
+    buf[len2++] = ' '; buf[len2++] = 'f'; buf[len2++] = 'r'; buf[len2++] = 'e'; buf[len2++] = 'e';
+    buf[len2] = '\0';
     terminal_write(buf);
     terminal_write("\n");
 

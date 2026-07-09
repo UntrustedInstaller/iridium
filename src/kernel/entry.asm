@@ -17,6 +17,11 @@ _start:
     ; Set up a stack
     mov esp, stack_top
 
+    ; Early serial debug
+    mov dx, 0x3F8
+    mov al, 'E'
+    out dx, al
+
     ; Save multiboot magic (EAX) and info pointer (EBX) FIRST
     push ebx
     push eax
@@ -44,9 +49,19 @@ _start:
     mov al, 0x0B
     out dx, al          ; IRQs enabled, RTS/DSR set
 
+    ; Early serial debug
+    mov dx, 0x3F8
+    mov al, 'E'
+    out dx, al
+
     ; Call multiboot_init with saved values (already on stack)
     call multiboot_init
     add esp, 8
+
+    ; Early debug
+    mov dx, 0x3F8
+    mov al, 'K'
+    out dx, al
 
     call kernel_main
 

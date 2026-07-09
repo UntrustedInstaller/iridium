@@ -60,9 +60,9 @@ typedef struct multiboot_mmap_entry multiboot_mmap_entry_t;
 extern struct multiboot_header* multiboot_info;
 
 void multiboot_init(uint32_t magic, uint32_t addr);
-uint32_t multiboot_get_total_memory_kb(void);
-uint32_t multiboot_get_lower_memory_kb(void);
-uint32_t multiboot_get_upper_memory_kb(void);
+uint32_t multiboot_get_total_memory_kb(void) __attribute__((unused));
+uint32_t multiboot_get_lower_memory_kb(void) __attribute__((unused));
+uint32_t multiboot_get_upper_memory_kb(void) __attribute__((unused));
 int multiboot_has_mmap(void);
 int multiboot_get_mmap_count(void);
 multiboot_mmap_entry_t* multiboot_get_mmap_entry(int idx);
