@@ -1,53 +1,56 @@
-# Building OsmiumOS
+# Building IridiumOS
 
-## Prerequisites
+## Interactive build
 
-- NASM (assembler)
-- GCC with `-m16` support (i386 cross-target or multilib)
-- GNU ld (BFD, ELF support)
-- `mtools` (mformat, mcopy)
-- QEMU (optional, for testing)
-
-On Debian/Ubuntu:
-
-```
-sudo apt install nasm gcc-multilib mtools qemu-system-x86
+```bash
+bash build.sh
 ```
 
-## Build
+This will check dependencies, compile everything, link the kernel ELF, and offer to boot it in QEMU.
 
-```
-./build.sh
-```
+## Manual build
 
-That's it. The script:
+```bash
+export BUILD=build
+mkdir -p $BUILD
 
-1. Assembles `src/boot.asm` → flat binary boot sector
-2. Assembles `src/kernel.asm` → ELF object
-3. Compiles `src/main.c`, `src/fs.c`, and everything in `src/app/` (except loadable modules)
-4. Links to ELF, then strips BSS into a flat binary
-5. Concatenates boot sector + kernel → `build/os.img`
-6. Uses `mformat` to write a real FAT12 filesystem on top
-7. Builds loadable modules (snake) and seeds config/boot files
+# Assemble multiboot header
+nasm -f elf32 src/boot/multiboot_header.asm -o $BUILD/multiboot_header.o
 
-## Run
+# Assemble entry point
+nasm -f elf32 src/kernel/entry.asm -o $BUILD/entry.o
 
-```
-qemu-system-i386 -fda build/os.img
-```
+# Compile C sources
+gcc -m32 -ffreestanding -fno-stack-protector -fno-pic -fno-PIE \
+    -std=c99 -Wall -Wextra -Werror -O2 -g \
+    -Isrc/kernel -c src/kernel/main.c -o $BUILD/main.o
 
-Or the build script will offer to launch QEMU automatically.
+# Link
+ld -m elf_i386 -T link.ld \
+    $BUILD/multiboot_header.o $BUILD/entry.o $BUILD/main.o \
+    -o $BUILD/iridium.elf
 
-## Writing to a floppy
-
-The build script asks at the end. Or manually:
-
-```
-dd if=build/os.img of=/dev/fd0 bs=512 status=progress
+# Run
+qemu-system-i386 -kernel $BUILD/iridium.elf -m 64
 ```
 
-Yes you need root for that. Yes you should be careful. Yes it will destroy everything on that disk. You've been warned.
+## Toolchain notes
 
-## What is this thing anyway
+The kernel is compiled with `-m32 -ffreestanding` (no libc, no startup code). The multiboot header tells the bootloader (GRUB or QEMU's built-in multiboot loader) how to load the ELF.
 
-16-bit real mode, no protected mode, no UEFI, no drivers, no memory model worth mentioning. It boots off a FAT12 floppy, gives you a shell, and lets you run apps. That's the whole deal.
+On some systems, 32-bit compilation support needs a separate package:
+
+```bash
+# Debian/Ubuntu
+sudo apt install gcc-multilib
+
+# Arch
+sudo pacman -S gcc-multilib
+
+# Fedora
+sudo dnf install glibc-devel.i686
+```
+
+## Output
+
+The build produces `build/iridium.elf` — a 32-bit ELF kernel with the multiboot header in the first 8 KB. Boot it with any multiboot-compliant loader.
