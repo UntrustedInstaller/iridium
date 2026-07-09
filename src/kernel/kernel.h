@@ -30,4 +30,21 @@ enum vga_color {
 #define vga_entry_color(fg, bg) ((uint8_t)((fg) | ((bg) << 4)))
 #define vga_entry(uc, color)    ((uint16_t)((uint16_t)(uc) | ((uint16_t)(color) << 8)))
 
+static inline int strlen(const char* s) {
+    int n = 0;
+    while (*s++) n++;
+    return n;
+}
+
+static inline int strcmp(const char* a, const char* b) {
+    while (*a && *a == *b) { a++; b++; }
+    return *(unsigned char*)a - *(unsigned char*)b;
+}
+
+static inline int strncmp(const char* a, const char* b, int n) {
+    while (n-- && *a && *a == *b) { a++; b++; }
+    if (n < 0) return 0;
+    return *(unsigned char*)a - *(unsigned char*)b;
+}
+
 #endif

@@ -29,8 +29,8 @@ A defining gimmick or feature should put it on the map — something that makes 
 | **Minimum RAM** | 16 MB (target), 4 MB (stretch) |
 | **Storage** | USB, CD-R, HDD; floppy variant as stretch goal |
 | **Graphical output** | VGA text mode (early), VBE 640×480 or 1024×768 (full GUI) |
-| **Filesystem** | FAT32 for host OS interoperability |
-| **Compatibility** | POSIX-ish userland; OsmiumOS 16-bit subsystem (Osmiridium) |
+| **Filesystem** | ext2 native; FAT32 read/write for host OS interoperability |
+| **Compatibility** | POSIX-compliant userland; OsmiumOS 16-bit subsystem (Osmiridium) |
 
 ---
 
@@ -84,7 +84,7 @@ The boot screen goes *all in* on the 90s OS aesthetic — think Windows 2000 sta
 - **Flat memory model** with paging (4 KB pages)
 - **Monolithic kernel** with loadable modules
 - **Preemptive multitasking** (round-robin or priority)
-- **POSIX-ish system calls** for userland
+- **POSIX-compliant system calls** for userland
 - **IMGUI-based compositor** drives all rendering
 
 ### 4.2 Compatibility: Osmiridium Subsystem
@@ -98,8 +98,9 @@ The Osmiridium subsystem provides an **OS/2-like compatibility layer** for runni
 
 ### 4.3 Filesystem
 
-- **FAT32** is the primary filesystem for maximum host OS interoperability
-- A mounted Iridium drive should be readable and writable from Windows, Linux, and macOS
+- **ext2** is the native filesystem — simple, well-documented, natively Unix (permissions, hard links, symlinks, device nodes)
+- **FAT32** is supported as a secondary read/write driver for cross-platform interoperability (USB sticks, shared drives)
+- A mounted Iridium drive should be readable and writable from Windows, Linux, and macOS (via the FAT32 driver or ext2 tools)
 - Iridium-specific metadata and program data uses conventional file formats where possible; proprietary formats are the exception, not the rule
 - VFS abstraction will support additional filesystem types in the future
 

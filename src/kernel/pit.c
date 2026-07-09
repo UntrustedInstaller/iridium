@@ -1,7 +1,15 @@
 #include "pit.h"
 #include "io.h"
 
-volatile uint32_t tick = 0;
+static volatile uint32_t tick = 0;
+
+void pit_tick(void) {
+    tick++;
+}
+
+uint32_t pit_get_tick(void) {
+    return tick;
+}
 
 void pit_init(void) {
     uint32_t divisor = 1193180 / PIT_FREQ;

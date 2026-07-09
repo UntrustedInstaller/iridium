@@ -2,6 +2,7 @@
 #include "io.h"
 #include "terminal.h"
 #include "keyboard.h"
+#include "pit.h"
 
 static const char* const exception_names[] = {
     "Divide by zero",
@@ -52,7 +53,9 @@ void isr_handler(struct registers* regs) {
 }
 
 void irq_handler(struct registers* regs) {
-    if (regs->int_no == 33) {
+    if (regs->int_no == 32) {
+        pit_tick();
+    } else if (regs->int_no == 33) {
         keyboard_handler();
     }
 
