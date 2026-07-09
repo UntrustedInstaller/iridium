@@ -9,6 +9,44 @@
 
 static char history[HISTORY_SIZE][SHELL_BUF];
 static int history_count = 0;
+static char hostname[64] = "iridium";
+
+struct cmd {
+    const char* name;
+    const char* desc;
+    void (*handler)(const char* args);
+};
+
+static void cmd_help(const char*);
+static void cmd_clear(const char*);
+static void cmd_echo(const char*);
+static void cmd_uptime(const char*);
+static void cmd_version(const char*);
+static void cmd_uname(const char*);
+static void cmd_whoami(const char*);
+static void cmd_id(const char*);
+static void cmd_hostname(const char*);
+static void cmd_true(const char*);
+static void cmd_false(const char*);
+
+static const struct cmd commands[] = {
+    {"help",    "Show this help",             cmd_help},
+    {"clear",   "Clear screen",               cmd_clear},
+    {"echo",    "Echo text back",             cmd_echo},
+    {"uptime",  "Show system uptime",         cmd_uptime},
+    {"version", "Show kernel version",        cmd_version},
+    {"uname",   "Print system information",   cmd_uname},
+    {"whoami",  "Print effective user ID",    cmd_whoami},
+    {"id",      "Print user identity",        cmd_id},
+    {"hostname","Print or set hostname",      cmd_hostname},
+    {"true",    "Do nothing, successfully",   cmd_true},
+    {"false",   "Do nothing, unsuccessfully", cmd_false},
+    {0, 0, 0}
+};
+
+static void skip_spaces(const char** p) {
+    while (**p == ' ') (*p)++;
+}
 
 static void history_add(const char* line) {
     int len = strlen(line);
@@ -27,16 +65,62 @@ static void history_add(const char* line) {
     history_count++;
 }
 
-static void cmd_help(void) {
-    terminal_write("Available commands:\n");
-    terminal_write("  help    - Show this help\n");
-    terminal_write("  clear   - Clear screen\n");
-    terminal_write("  uptime  - Show system uptime\n");
-    terminal_write("  echo    - Echo text back\n");
-    terminal_write("  version - Show kernel version\n");
+static void history_load(char* buf, int* pos, int idx) {
+    int old = *pos;
+    *pos = 0;
+    while (history[idx][*pos]) (*pos)++;
+    terminal_putchar('\r');
+    terminal_write("> ");
+    terminal_write(history[idx]);
+    for (int i = *pos; i < old; i++) terminal_putchar(' ');
+    terminal_putchar('\r');
+    terminal_write("> ");
+    terminal_write(history[idx]);
+    *pos = strlen(history[idx]);
+    int j;
+    for (j = 0; history[idx][j]; j++) buf[j] = history[idx][j];
+    buf[j] = '\0';
 }
 
-static void cmd_uptime(void) {
+static void history_clear(char* buf, int* pos) {
+    int old = *pos;
+    terminal_putchar('\r');
+    terminal_write("> ");
+    for (int i = 0; i < old; i++) terminal_putchar(' ');
+    terminal_putchar('\r');
+    terminal_write("> ");
+    *pos = 0;
+    buf[0] = '\0';
+}
+
+static void cmd_help(const char* args) {
+    (void)args;
+    terminal_write("Available commands:\n");
+    for (const struct cmd* c = commands; c->name; c++) {
+        terminal_write("  ");
+        terminal_write(c->name);
+        terminal_write(" - ");
+        terminal_write(c->desc);
+        terminal_write("\n");
+    }
+}
+
+static void cmd_clear(const char* args) {
+    (void)args;
+    terminal_clear();
+}
+
+static void cmd_echo(const char* args) {
+    const char* p = args;
+    skip_spaces(&p);
+    while (*p && *p != ' ') p++;
+    skip_spaces(&p);
+    terminal_write(p);
+    terminal_write("\n");
+}
+
+static void cmd_uptime(const char* args) {
+    (void)args;
     uint32_t t = pit_get_tick();
     uint32_t secs = t / 100;
     uint32_t mins = secs / 60;
@@ -64,17 +148,58 @@ static void cmd_uptime(void) {
     terminal_write("\n");
 }
 
-static void cmd_echo(const char* line) {
-    const char* arg = line + 4;
-    while (*arg == ' ') arg++;
-    terminal_write(arg);
-    terminal_write("\n");
-}
-
-static void cmd_version(void) {
+static void cmd_version(const char* args) {
+    (void)args;
     terminal_write("IridiumOS 32-bit Phase 1\n");
     terminal_write("Boot protocol: Multiboot + PVH ELF note\n");
     terminal_write("CPU: i686 (32-bit protected mode)\n");
+}
+
+static void cmd_uname(const char* args) {
+    const char* p = args;
+    skip_spaces(&p);
+    while (*p && *p != ' ') p++;
+    skip_spaces(&p);
+    int all = (*p == '-' && p[1] == 'a');
+
+    if (all) {
+        terminal_write("IridiumOS iridium 0.1 Phase1 i686\n");
+    } else {
+        terminal_write("IridiumOS\n");
+    }
+}
+
+static void cmd_whoami(const char* args) {
+    (void)args;
+    terminal_write("root\n");
+}
+
+static void cmd_id(const char* args) {
+    (void)args;
+    terminal_write("uid=0(root) gid=0(root)\n");
+}
+
+static void cmd_hostname(const char* args) {
+    const char* p = args;
+    skip_spaces(&p);
+    while (*p && *p != ' ') p++;
+    skip_spaces(&p);
+    if (*p) {
+        int i;
+        for (i = 0; *p && i < 63; i++) hostname[i] = *p++;
+        hostname[i] = '\0';
+    } else {
+        terminal_write(hostname);
+        terminal_write("\n");
+    }
+}
+
+static void cmd_true(const char* args) {
+    (void)args;
+}
+
+static void cmd_false(const char* args) {
+    (void)args;
 }
 
 void shell_run(void) {
@@ -94,17 +219,21 @@ void shell_run(void) {
 
             if (pos > 0) {
                 history_add(buf);
-                if (strncmp(buf, "help", 4) == 0 && (buf[4] == '\0' || buf[4] == ' ')) {
-                    cmd_help();
-                } else if (strncmp(buf, "clear", 5) == 0) {
-                    terminal_clear();
-                } else if (strncmp(buf, "uptime", 6) == 0) {
-                    cmd_uptime();
-                } else if (strncmp(buf, "echo", 4) == 0) {
-                    cmd_echo(buf);
-                } else if (strncmp(buf, "version", 7) == 0) {
-                    cmd_version();
-                } else {
+                const char* line = buf;
+                skip_spaces(&line);
+                const char* start = line;
+                while (*line && *line != ' ') line++;
+                int cmd_len = line - start;
+
+                int found = 0;
+                for (const struct cmd* cmd = commands; cmd->name; cmd++) {
+                    if (strncmp(start, cmd->name, cmd_len) == 0 && cmd->name[cmd_len] == '\0') {
+                        cmd->handler(buf);
+                        found = 1;
+                        break;
+                    }
+                }
+                if (!found) {
                     terminal_write("Unknown command. Type 'help'.\n");
                 }
             }
@@ -122,49 +251,16 @@ void shell_run(void) {
             if (history_count > 0 && history_pos < history_count - 1) {
                 history_pos++;
                 int idx = history_count - 1 - history_pos;
-                int old_pos = pos;
-                pos = 0;
-                while (history[idx][pos]) pos++;
-                terminal_putchar('\r');
-                terminal_write("> ");
-                terminal_write(history[idx]);
-                for (int i = pos; i < old_pos; i++) terminal_putchar(' ');
-                terminal_putchar('\r');
-                terminal_write("> ");
-                terminal_write(history[idx]);
-                pos = strlen(history[idx]);
-                int j = 0;
-                while (history[idx][j]) { buf[j] = history[idx][j]; j++; }
-                buf[j] = '\0';
+                history_load(buf, &pos, idx);
             }
         } else if (c == KEY_DOWN) {
             if (history_pos > 0) {
                 history_pos--;
                 int idx = history_count - 1 - history_pos;
-                int old_pos = pos;
-                pos = 0;
-                while (history[idx][pos]) pos++;
-                terminal_putchar('\r');
-                terminal_write("> ");
-                terminal_write(history[idx]);
-                for (int i = pos; i < old_pos; i++) terminal_putchar(' ');
-                terminal_putchar('\r');
-                terminal_write("> ");
-                terminal_write(history[idx]);
-                pos = strlen(history[idx]);
-                int j = 0;
-                while (history[idx][j]) { buf[j] = history[idx][j]; j++; }
-                buf[j] = '\0';
+                history_load(buf, &pos, idx);
             } else if (history_pos == 0) {
                 history_pos = -1;
-                int old_pos = pos;
-                terminal_putchar('\r');
-                terminal_write("> ");
-                for (int i = 0; i < old_pos; i++) terminal_putchar(' ');
-                terminal_putchar('\r');
-                terminal_write("> ");
-                pos = 0;
-                buf[0] = '\0';
+                history_clear(buf, &pos);
             }
         } else if (c >= 32 && c < 127) {
             if (pos < SHELL_BUF - 1) {
