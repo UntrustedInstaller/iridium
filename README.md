@@ -17,7 +17,7 @@ Select "Yes, boot it" when prompted. You should see the boot messages on a purpl
 ## Directory layout
 
 ```
-iridium32/
+iridium/
 ├── build.sh              Interactive build script
 ├── link.ld               Kernel linker script
 ├── README.md             This file
