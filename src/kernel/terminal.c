@@ -17,17 +17,24 @@ static void terminal_update_cursor(void) {
 }
 
 static void terminal_putentryat(char c, uint8_t color, uint16_t x, uint16_t y) {
+    if (x >= VGA_WIDTH || y >= VGA_HEIGHT) return;
     vga_buffer[y * VGA_WIDTH + x] = vga_entry(c, color);
 }
 
 static void terminal_scroll(void) {
+    // Move all lines up by one
     for (uint16_t y = 0; y < VGA_HEIGHT - 1; y++) {
+        uint16_t* src = &vga_buffer[(y + 1) * VGA_WIDTH];
+        uint16_t* dst = &vga_buffer[y * VGA_WIDTH];
         for (uint16_t x = 0; x < VGA_WIDTH; x++) {
-            vga_buffer[y * VGA_WIDTH + x] = vga_buffer[(y + 1) * VGA_WIDTH + x];
+            dst[x] = src[x];
         }
     }
+    // Clear the last line with current color
+    uint16_t blank = vga_entry(' ', terminal_color);
+    uint16_t* last_line = &vga_buffer[(VGA_HEIGHT - 1) * VGA_WIDTH];
     for (uint16_t x = 0; x < VGA_WIDTH; x++) {
-        vga_buffer[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = vga_entry(' ', terminal_color);
+        last_line[x] = blank;
     }
 }
 
@@ -48,8 +55,11 @@ void terminal_putchar(char c) {
         return;
     }
     if (c == '\b') {
-        if (terminal_column > 0) terminal_column--;
-        terminal_update_cursor();
+        if (terminal_column > 0) {
+            terminal_column--;
+            terminal_putentryat(' ', terminal_color, terminal_column, terminal_row);
+            terminal_update_cursor();
+        }
         return;
     }
     terminal_putentryat(c, terminal_color, terminal_column, terminal_row);
