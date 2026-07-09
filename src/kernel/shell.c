@@ -3,6 +3,7 @@
 #include "terminal.h"
 #include "pit.h"
 #include "keyboard.h"
+#include "pmm.h"
 
 #define SHELL_BUF 256
 #define HISTORY_SIZE 8
@@ -28,6 +29,7 @@ static void cmd_id(const char*);
 static void cmd_hostname(const char*);
 static void cmd_true(const char*);
 static void cmd_false(const char*);
+static void cmd_mem(const char*);
 
 static const struct cmd commands[] = {
     {"help",    "Show this help",             cmd_help},
@@ -41,6 +43,7 @@ static const struct cmd commands[] = {
     {"hostname","Print or set hostname",      cmd_hostname},
     {"true",    "Do nothing, successfully",   cmd_true},
     {"false",   "Do nothing, unsuccessfully", cmd_false},
+    {"mem",     "Show memory usage",          cmd_mem},
     {0, 0, 0}
 };
 
@@ -200,6 +203,49 @@ static void cmd_true(const char* args) {
 
 static void cmd_false(const char* args) {
     (void)args;
+}
+
+static void cmd_mem(const char* args) {
+    (void)args;
+    uint32_t total = pmm_get_used_frames() + pmm_get_free_frames();
+    uint32_t free = pmm_get_free_frames();
+    uint32_t used = pmm_get_used_frames();
+
+    terminal_write("Total: ");
+    char buf[16];
+    int len = 0;
+    uint32_t n = total;
+    if (n == 0) { buf[len++] = '0'; }
+    else { while (n > 0) { buf[len++] = '0' + n % 10; n /= 10; } }
+    for (int i = len - 1; i >= 0; i--) terminal_putchar(buf[i]);
+    terminal_write(" frames (");
+
+    // Total MiB
+    uint32_t total_mib = (total * 4096) / (1024 * 1024);
+    uint32_t used_mib = (used * 4096) / (1024 * 1024);
+    uint32_t free_mib = (free * 4096) / (1024 * 1024);
+
+    // Print total MiB
+    n = total_mib;
+    len = 0;
+    if (n == 0) { buf[len++] = '0'; }
+    else { while (n > 0) { buf[len++] = '0' + n % 10; n /= 10; } }
+    for (int i = len - 1; i >= 0; i--) terminal_putchar(buf[i]);
+    terminal_write(" MiB total, ");
+
+    // Used MiB
+    len = 0; n = used_mib;
+    if (n == 0) { buf[len++] = '0'; }
+    else { while (n > 0) { buf[len++] = '0' + n % 10; n /= 10; } }
+    for (int i = len - 1; i >= 0; i--) terminal_putchar(buf[i]);
+    terminal_write(" MiB used, ");
+
+    // Free MiB
+    len = 0; n = free_mib;
+    if (n == 0) { buf[len++] = '0'; }
+    else { while (n > 0) { buf[len++] = '0' + n % 10; n /= 10; } }
+    for (int i = len - 1; i >= 0; i--) terminal_putchar(buf[i]);
+    terminal_write(" MiB free)\n");
 }
 
 void shell_run(void) {

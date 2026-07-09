@@ -70,19 +70,20 @@ void terminal_clear(void) {
     for (uint16_t i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
         vga_buffer[i] = vga_entry(' ', terminal_color);
     }
-    terminal_update_cursor();
 }
 
 void terminal_initialize(void) {
-    outb(0x3C8, 1);
-    outb(0x3C9, 22);
-    outb(0x3C9, 11);
-    outb(0x3C9, 32);
-
+    // Set VGA text mode 80x25
     outb(0x3D4, 0x0A);
     outb(0x3D5, 0x0E);
     outb(0x3D4, 0x0B);
     outb(0x3D5, 0x0F);
+
+    // Set custom blue palette entry 1
+    outb(0x3C8, 1);
+    outb(0x3C9, 22);
+    outb(0x3C9, 11);
+    outb(0x3C9, 32);
 
     terminal_color = vga_entry_color(VGA_WHITE, VGA_BLUE);
     terminal_clear();

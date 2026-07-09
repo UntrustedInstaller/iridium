@@ -17,13 +17,37 @@ _start:
     ; Set up a stack
     mov esp, stack_top
 
-    ; Save multiboot magic (EAX) and info pointer (EBX)
+    ; Save multiboot magic (EAX) and info pointer (EBX) FIRST
     push ebx
     push eax
+
+    ; Early serial init (COM1: 0x3F8, 115200 8N1)
+    mov dx, 0x3F8 + 1
+    mov al, 0x00
+    out dx, al          ; Disable interrupts
+    mov dx, 0x3F8 + 3
+    mov al, 0x80
+    out dx, al          ; DLAB = 1
+    mov dx, 0x3F8 + 0
+    mov al, 0x0C
+    out dx, al          ; Divisor low byte (115200 baud)
+    mov dx, 0x3F8 + 1
+    mov al, 0x00
+    out dx, al          ; Divisor high byte
+    mov dx, 0x3F8 + 3
+    mov al, 0x03
+    out dx, al          ; 8 bits, no parity, 1 stop bit
+    mov dx, 0x3F8 + 2
+    mov al, 0xC7
+    out dx, al          ; Enable FIFO, clear, 14-byte threshold
+    mov dx, 0x3F8 + 4
+    mov al, 0x0B
+    out dx, al          ; IRQs enabled, RTS/DSR set
+
+    ; Call multiboot_init with saved values (already on stack)
     call multiboot_init
     add esp, 8
 
-    ; Call kernel_main
     call kernel_main
 
     ; If kernel_main returns, loop forever

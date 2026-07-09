@@ -1,32 +1,61 @@
 #include "multiboot.h"
 #include "terminal.h"
+#include "kernel.h"
 
-struct multiboot_header* multiboot_info = 0;
+#define MAX_MMAP_ENTRIES 32
+
+static multiboot_mmap_entry_t memory_map[MAX_MMAP_ENTRIES];
+static int mmap_entry_count = 0;
+
+static uint32_t total_memory_kb = 0;
+static uint32_t lower_memory_kb = 0;
+static uint32_t upper_memory_kb = 0;
 
 void multiboot_init(uint32_t magic, uint32_t addr) {
-    if (magic != 0x2BADB002) {
-        terminal_write("Invalid multiboot magic!\n");
+    if (magic != 0x2BADB002 && magic != 0x2BADB045) {
+        terminal_write("Multiboot: invalid magic!\n");
         return;
     }
-    multiboot_info = (struct multiboot_header*)addr;
-}
+
+    struct multiboot_header* mbi = (struct multiboot_header*)addr;
+
+    if (!(mbi->flags & MULTIBOOT_FLAG_MEM)) {
+        terminal_write("Multiboot: no mem info\n");
+        return;
+    }
+
+    lower_memory_kb = mbi->mem_lower;
+    upper_memory_kb = mbi->mem_upper;
+    total_memory_kb = lower_memory_kb + upper_memory_kb;
+
+    if (mbi->flags & MULTIBOOT_FLAG_MMAP) {
+    }
+
+    }
 
 uint32_t multiboot_get_total_memory_kb(void) {
-    if (!multiboot_info) return 0;
-    return multiboot_info->mem_lower + multiboot_info->mem_upper;
+    return total_memory_kb;
 }
 
 uint32_t multiboot_get_lower_memory_kb(void) {
-    if (!multiboot_info) return 0;
-    return multiboot_info->mem_lower;
+    return lower_memory_kb;
 }
 
 uint32_t multiboot_get_upper_memory_kb(void) {
-    if (!multiboot_info) return 0;
-    return multiboot_info->mem_upper;
+    return upper_memory_kb;
 }
 
 int multiboot_has_mmap(void) {
-    if (!multiboot_info) return 0;
-    return multiboot_info->flags & MULTIBOOT_FLAG_MMAP;
+    return mmap_entry_count > 0;
+}
+
+int multiboot_get_mmap_count(void) {
+    return mmap_entry_count;
+}
+
+multiboot_mmap_entry_t* multiboot_get_mmap_entry(int idx) {
+    if (idx >= 0 && idx < mmap_entry_count) {
+        return &memory_map[idx];
+    }
+    return 0;
 }

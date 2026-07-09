@@ -7,6 +7,7 @@
 #include "keyboard.h"
 #include "shell.h"
 #include "multiboot.h"
+#include "pmm.h"
 
 void kernel_main(void) {
     gdt_init();
@@ -43,6 +44,29 @@ void kernel_main(void) {
     buf[len] = '\0';
     terminal_write(buf);
     terminal_write(" detected.\n");
+
+    pmm_init();
+
+    terminal_write("Physical frames: ");
+    len = 0;
+    uint32_t free = pmm_get_free_frames();
+    if (free == 0) { buf[len++] = '0'; }
+    else {
+        while (free > 0) {
+            char tmp[16];
+            int j = 0;
+            uint32_t n = free;
+            if (n == 0) tmp[j++] = '0';
+            while (n > 0) { tmp[j++] = '0' + n % 10; n /= 10; }
+            while (j > 0) buf[len++] = tmp[--j];
+            free = 0;
+        }
+    }
+    buf[len++] = ' '; buf[len++] = 'f'; buf[len++] = 'r'; buf[len++] = 'e'; buf[len++] = 'e';
+    buf[len] = '\0';
+    terminal_write(buf);
+    terminal_write("\n");
+
     terminal_write("Making sure the purple is purple enough. It is.\n");
     terminal_write("Spinning up the thing that spins up things... done.\n\n");
 

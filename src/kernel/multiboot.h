@@ -49,6 +49,14 @@ struct multiboot_mmap_entry {
     uint32_t type;
 };
 
+typedef struct multiboot_mmap_entry multiboot_mmap_entry_t;
+
+#define MULTIBOOT_MEMORY_AVAILABLE 1
+#define MULTIBOOT_MEMORY_RESERVED  2
+#define MULTIBOOT_MEMORY_ACPI      3
+#define MULTIBOOT_MEMORY_NVS       4
+#define MULTIBOOT_MEMORY_BADRAM    5
+
 extern struct multiboot_header* multiboot_info;
 
 void multiboot_init(uint32_t magic, uint32_t addr);
@@ -56,5 +64,7 @@ uint32_t multiboot_get_total_memory_kb(void);
 uint32_t multiboot_get_lower_memory_kb(void);
 uint32_t multiboot_get_upper_memory_kb(void);
 int multiboot_has_mmap(void);
+int multiboot_get_mmap_count(void);
+multiboot_mmap_entry_t* multiboot_get_mmap_entry(int idx);
 
 #endif
