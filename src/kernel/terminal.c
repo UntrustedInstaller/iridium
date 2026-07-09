@@ -75,6 +75,11 @@ void terminal_clear(void) {
 }
 
 void terminal_initialize(void) {
+    outb(0x3C8, 1);
+    outb(0x3C9, 22);
+    outb(0x3C9, 11);
+    outb(0x3C9, 32);
+
     terminal_color = vga_entry_color(VGA_WHITE, VGA_BLUE);
     terminal_clear();
 }
