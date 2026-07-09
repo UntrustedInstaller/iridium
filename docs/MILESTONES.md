@@ -1,6 +1,6 @@
 # IridiumOS Milestones
 
-**Phase 0 — Bootstrap** ← YOU ARE HERE
+**Phase 0 — Bootstrap** ✓
 
 - [x] Multiboot kernel that boots in QEMU `-kernel`
 - [x] VGA text mode output with scrolling
@@ -9,19 +9,21 @@
 
 ---
 
-**Phase 1 — Foundation** (~next)
+**Phase 1 — Foundation** ✓
 
-- [ ] Own GDT (bootloader gives us one, but we should own it)
-- [ ] IDT with handler stubs (divide-by-zero, GPF, etc.)
-- [ ] PIC remapping and IRQ handlers
-- [ ] PIT timer (system tick, 100 Hz or 1000 Hz)
-- [ ] PS/2 keyboard driver (scancode set 1 → ASCII + keycodes)
-- [ ] Ring buffer input queue
-- [ ] Simple echo shell (`kernel_main` → shell loop)
+- [x] Own GDT (null + code 0x08 + data 0x10)
+- [x] IDT with exception/IRQ stubs (8-byte entries, 32-bit format)
+- [x] PIC remapped (master INT 32, slave INT 40)
+- [x] PIT timer (100 Hz system tick)
+- [x] PS/2 keyboard driver (scancode set 1 → ASCII + arrow keys + shift)
+- [x] Ring buffer input queue (256-entry)
+- [x] Shell with POSIX commands (help, clear, echo, uptime, uname, whoami, id, hostname, true, false)
+- [x] VGA cursor follows output
+- [x] Custom background color (#5A2E82 via DAC reprogramming)
 
 ---
 
-**Phase 2 — Memory & Processes**
+**Phase 2 — Memory & Processes** ← YOU ARE HERE
 
 - [ ] Memory detection (multiboot info or INT 0x15 E820)
 - [ ] Frame allocator (physical page allocator, bitmap or stack)
