@@ -5,34 +5,39 @@
 static uint32_t* page_directory = 0;
 
 void paging_init(void) {
-    page_directory = (uint32_t*)0x2000;
+    uint32_t pd_phys  = pmm_alloc_frame();
+    uint32_t pt0_phys = pmm_alloc_frame();
+    uint32_t pt_fb_phys = pmm_alloc_frame();
+    uint32_t pt_heap_phys = pmm_alloc_frame();
+
+    page_directory = (uint32_t*)pd_phys;
     for (int i = 0; i < PAGE_DIR_ENTRIES; i++) {
         page_directory[i] = 0;
     }
 
-    uint32_t* pt0 = (uint32_t*)0x3000;
+    uint32_t* pt0 = (uint32_t*)pt0_phys;
     for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) {
         pt0[i] = (i * PAGE_SIZE) | PAGE_PRESENT | PAGE_WRITE;
     }
-    page_directory[0] = ((uint32_t)pt0) | PAGE_PRESENT | PAGE_WRITE;
+    page_directory[0] = pt0_phys | PAGE_PRESENT | PAGE_WRITE;
 
     uint32_t fb_virt = 0xFD000000;
     uint32_t fb_pde_idx = fb_virt >> 22;
-    uint32_t* pt_fb = (uint32_t*)0x4000;
+    uint32_t* pt_fb = (uint32_t*)pt_fb_phys;
     for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) {
         pt_fb[i] = (fb_virt + i * PAGE_SIZE) | PAGE_PRESENT | PAGE_WRITE;
     }
-    page_directory[fb_pde_idx] = ((uint32_t)pt_fb) | PAGE_PRESENT | PAGE_WRITE;
+    page_directory[fb_pde_idx] = pt_fb_phys | PAGE_PRESENT | PAGE_WRITE;
 
     uint32_t heap_virt = 0xE0000000;
     uint32_t heap_pde_idx = heap_virt >> 22;
-    uint32_t* pt_heap = (uint32_t*)0x5000;
+    uint32_t* pt_heap = (uint32_t*)pt_heap_phys;
     for (int i = 0; i < PAGE_TABLE_ENTRIES; i++) {
         pt_heap[i] = 0;
     }
-    page_directory[heap_pde_idx] = ((uint32_t)pt_heap) | PAGE_PRESENT | PAGE_WRITE;
+    page_directory[heap_pde_idx] = pt_heap_phys | PAGE_PRESENT | PAGE_WRITE;
 
-    __asm__ volatile("mov %0, %%cr3" : : "r"((uint32_t)page_directory));
+    __asm__ volatile("mov %0, %%cr3" : : "r"(pd_phys));
 
     uint32_t cr0;
     __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));

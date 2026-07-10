@@ -46,14 +46,16 @@ void pmm_init(void) {
         frame_bitmap = (uint32_t*)0x100000;
     }
 
-    // Clear bitmap
+    // All frames used by default
+    uint32_t bitmap_ints = (total_frames + 31) / 32;
+    for (uint32_t i = 0; i < bitmap_ints; i++) {
+        frame_bitmap[i] = 0xFFFFFFFF;
+    }
     used_frames = total_frames;
-
-    // Ensure find_free_frame is not optimized away
-    (void)find_free_frame;
 
     int mmap_count = multiboot_get_mmap_count();
     if (mmap_count > 0) {
+        // Walk mmap: free only what BIOS says is available
         for (int i = 0; i < mmap_count; i++) {
             multiboot_mmap_entry_t* entry = multiboot_get_mmap_entry(i);
             if (entry->type == MULTIBOOT_MEMORY_AVAILABLE) {
@@ -81,7 +83,7 @@ void pmm_init(void) {
             upper_kb = 64512;
         }
 
-        // Lower memory: 0 - 640KB (reserve page 0)
+        // Lower memory: 0 - 640KB (skip frame 0)
         uint32_t last_frame = (lower_kb * 1024) / PAGE_SIZE;
         for (uint32_t f = 1; f < last_frame; f++) {
             if (f < total_frames) { bitmap_clear(f); used_frames--; }
@@ -97,12 +99,36 @@ void pmm_init(void) {
         }
     }
 
-    // Reserve kernel frames
+    // Now re-reserve specific regions the kernel needs.
+    // The mmap marked kernel RAM as AVAILABLE, so we must explicitly
+    // reserve kernel image, bitmap, and frame 0.
+
+    // Reserve frame 0 (IVT/BDA)
+    if (!bitmap_test(0)) {
+        bitmap_set(0);
+        used_frames++;
+    }
+
+    // Reserve kernel image frames (loaded at 0x100000 through _kernel_end)
     extern uint32_t _kernel_end;
+    uint32_t kernel_start = 0x100000;
     uint32_t kernel_end = (uint32_t)&_kernel_end;
-    uint32_t kernel_frames = (kernel_end + PAGE_SIZE - 1) / PAGE_SIZE;
-    for (uint32_t f = 0; f < kernel_frames; f++) {
-        if (f < total_frames) {
+    uint32_t kernel_first = kernel_start / PAGE_SIZE;
+    uint32_t kernel_last = (kernel_end + PAGE_SIZE - 1) / PAGE_SIZE;
+    for (uint32_t f = kernel_first; f < kernel_last; f++) {
+        if (f < total_frames && !bitmap_test(f)) {
+            bitmap_set(f);
+            used_frames++;
+        }
+    }
+
+    // Reserve bitmap frames (placed right after _kernel_end)
+    uint32_t bitmap_addr = (uint32_t)frame_bitmap;
+    uint32_t bitmap_size = (total_frames + 7) / 8;
+    uint32_t bitmap_first = bitmap_addr / PAGE_SIZE;
+    uint32_t bitmap_last = (bitmap_addr + bitmap_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    for (uint32_t f = bitmap_first; f < bitmap_last; f++) {
+        if (f < total_frames && !bitmap_test(f)) {
             bitmap_set(f);
             used_frames++;
         }

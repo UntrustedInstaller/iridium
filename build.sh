@@ -67,6 +67,7 @@ echo -e "\n${BLUE}${BOLD}[*]${NC} Compiling (GCC)..."
 
 CFLAGS="-m32 -ffreestanding -fno-stack-protector -fno-pic -fno-PIE"
 CFLAGS="$CFLAGS -std=c99 -Wall -Wextra -Werror"
+CFLAGS="$CFLAGS -mno-sse -mno-sse2 -mno-mmx -mno-avx"
 CFLAGS="$CFLAGS -I$SRC_DIR/kernel -I$SRC_DIR/lib -I$SRC_DIR/drivers -I$SRC_DIR/fs -I$SRC_DIR/gui"
 CFLAGS="$CFLAGS -O2 -g"
 
