@@ -22,7 +22,6 @@ static void terminal_putentryat(char c, uint8_t color, uint16_t x, uint16_t y) {
 }
 
 static void terminal_scroll(void) {
-    // Move all lines up by one
     for (uint16_t y = 0; y < VGA_HEIGHT - 1; y++) {
         uint16_t* src = &vga_buffer[(y + 1) * VGA_WIDTH];
         uint16_t* dst = &vga_buffer[y * VGA_WIDTH];
@@ -30,11 +29,8 @@ static void terminal_scroll(void) {
             dst[x] = src[x];
         }
     }
-    // Clear the last line with current color
-    uint16_t blank = vga_entry(' ', terminal_color);
-    uint16_t* last_line = &vga_buffer[(VGA_HEIGHT - 1) * VGA_WIDTH];
     for (uint16_t x = 0; x < VGA_WIDTH; x++) {
-        last_line[x] = blank;
+        vga_buffer[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = vga_entry(' ', terminal_color);
     }
 }
 
@@ -80,6 +76,7 @@ void terminal_clear(void) {
     for (uint16_t i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
         vga_buffer[i] = vga_entry(' ', terminal_color);
     }
+    terminal_update_cursor();
 }
 
 void terminal_initialize(void) {
@@ -140,17 +137,15 @@ void terminal_initialize(void) {
     outb(0x3C0, 0x13); outb(0x3C0, 0x00);
     outb(0x3C0, 0x14); outb(0x3C0, 0x00);
 
-    // Cursor shape
-    outb(0x3D4, 0x0A);
-    outb(0x3D5, 0x0E);
-    outb(0x3D4, 0x0B);
-    outb(0x3D5, 0x0F);
-
-    // Set custom blue palette entry 1
     outb(0x3C8, 1);
     outb(0x3C9, 22);
     outb(0x3C9, 11);
     outb(0x3C9, 32);
+
+    outb(0x3D4, 0x0A);
+    outb(0x3D5, 0x0E);
+    outb(0x3D4, 0x0B);
+    outb(0x3D5, 0x0F);
 
     terminal_color = vga_entry_color(VGA_WHITE, VGA_BLUE);
     terminal_clear();
