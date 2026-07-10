@@ -1,15 +1,16 @@
-#!/usr/bin/env bash
+#!/bin/sh
 set -e
 
 # =========================================================================
 #  IridiumOS 32-bit — Build Script
-#  Interactive, self-documenting, fresh build each run.
+#  POSIX sh compliant.
 # =========================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$SCRIPT_DIR/build"
 SRC_DIR="$SCRIPT_DIR/src"
 
+# Terminal colors (ESC sequences for printf)
 PURPLE='\033[0;35m'
 BLUE='\033[0;34m'
 GREEN='\033[0;32m'
@@ -17,53 +18,53 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-echo -e "${PURPLE}${BOLD}"
-echo "  ╔══════════════════════════════════════════════╗"
-echo "  ║        IridiumOS 32-bit — Build System       ║"
-echo "  ║       \"Osmium's periodic neighbor\"           ║"
-echo "  ╚══════════════════════════════════════════════╝"
-echo -e "${NC}"
+printf "${PURPLE}${BOLD}"
+printf "  ╔══════════════════════════════════════════════╗\n"
+printf "  ║        IridiumOS 32-bit — Build System       ║\n"
+printf "  ║       \"Osmium's periodic neighbor\"           ║\n"
+printf "  ╚══════════════════════════════════════════════╝\n"
+printf "${NC}"
 
 # ---- Dependency check ----
-echo -e "${BLUE}${BOLD}[*]${NC} Checking build dependencies..."
+printf "${BLUE}${BOLD}[*]${NC} Checking build dependencies...\n"
 MISSING=""
 for cmd in nasm gcc ld objcopy qemu-system-i386; do
-    if ! command -v $cmd &>/dev/null; then
-        echo -e "  ${RED}✗${NC} $cmd ${RED}not found${NC}"
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        printf "  ${RED}✗${NC} %s ${RED}not found${NC}\n" "$cmd"
         MISSING="$MISSING $cmd"
     else
-        echo -e "  ${GREEN}✓${NC} $cmd"
+        printf "  ${GREEN}✓${NC} %s\n" "$cmd"
     fi
 done
 
 if [ -n "$MISSING" ]; then
-    echo ""
-    echo -e "${RED}Missing dependencies:$MISSING${NC}"
-    echo "Install them with your package manager, e.g.:"
-    echo "  sudo apt install nasm gcc binutils qemu-system-x86"
+    printf "\n"
+    printf "${RED}Missing dependencies:%s${NC}\n" "$MISSING"
+    printf "Install them with your package manager, e.g.:\n"
+    printf "  sudo apt install nasm gcc binutils qemu-system-x86\n"
     exit 1
 fi
-echo ""
+printf "\n"
 
 # ---- Clean and prepare build directory ----
-echo -e "${BLUE}${BOLD}[*]${NC} Preparing fresh build directory..."
+printf "${BLUE}${BOLD}[*]${NC} Preparing fresh build directory...\n"
 rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR"/{boot,kernel,lib}
-echo -e "  ${GREEN}✓${NC} $BUILD_DIR"
+mkdir -p "$BUILD_DIR/boot" "$BUILD_DIR/kernel" "$BUILD_DIR/lib"
+printf "  ${GREEN}✓${NC} %s\n" "$BUILD_DIR"
 
 # ---- Assemble ----
-echo -e "\n${BLUE}${BOLD}[*]${NC} Assembling (NASM)..."
-for asm_file in "$SRC_DIR"/boot/*.asm "$SRC_DIR"/kernel/*.asm; do
+printf "\n${BLUE}${BOLD}[*]${NC} Assembling (NASM)...\n"
+for asm_file in "$SRC_DIR/boot"/*.asm "$SRC_DIR/kernel"/*.asm; do
     [ -f "$asm_file" ] || continue
     base=$(basename "$asm_file" .asm)
-    echo -e "  ${CYAN}→${NC} $base.o"
+    printf "  ${CYAN}→${NC} %s.o\n" "$base"
     nasm -f elf32 "$asm_file" -o "$BUILD_DIR/$base.o"
 done
 
 # ---- Compile C ----
-echo -e "\n${BLUE}${BOLD}[*]${NC} Compiling (GCC)..."
+printf "\n${BLUE}${BOLD}[*]${NC} Compiling (GCC)...\n"
 
 CFLAGS="-m32 -ffreestanding -fno-stack-protector -fno-pic -fno-PIE"
 CFLAGS="$CFLAGS -std=c99 -Wall -Wextra -Werror"
@@ -71,52 +72,55 @@ CFLAGS="$CFLAGS -mno-sse -mno-sse2 -mno-mmx -mno-avx"
 CFLAGS="$CFLAGS -I$SRC_DIR/kernel -I$SRC_DIR/lib -I$SRC_DIR/drivers -I$SRC_DIR/fs -I$SRC_DIR/gui"
 CFLAGS="$CFLAGS -O2 -g"
 
-for c_file in "$SRC_DIR"/kernel/*.c "$SRC_DIR"/drivers/*.c; do
+for c_file in "$SRC_DIR/kernel"/*.c "$SRC_DIR/drivers"/*.c; do
     [ -f "$c_file" ] || continue
     base=$(basename "$c_file" .c)
-    echo -e "  ${CYAN}→${NC} $base.o"
+    printf "  ${CYAN}→${NC} %s.o\n" "$base"
     gcc $CFLAGS -c "$c_file" -o "$BUILD_DIR/$base.o"
 done
 
 # ---- Link ----
-echo -e "\n${BLUE}${BOLD}[*]${NC} Linking (LD)..."
+printf "\n${BLUE}${BOLD}[*]${NC} Linking (LD)...\n"
 LDFLAGS="-m elf_i386 -T $SCRIPT_DIR/link.ld"
 
-# Collect all object files
 OBJS=$(find "$BUILD_DIR" -name '*.o' | sort)
+# shellcheck disable=SC2086
 ld $LDFLAGS $OBJS -o "$BUILD_DIR/iridium.elf"
 
 # ---- Metadata ----
-echo -e "\n${BLUE}${BOLD}[*]${NC} Kernel metadata:"
-KERNEL_SIZE=$(stat -c%s "$BUILD_DIR/iridium.elf")
-echo -e "  ${GREEN}✓${NC} iridium.elf — ${BOLD}$KERNEL_SIZE bytes${NC} ($((KERNEL_SIZE / 1024)) KB)"
+printf "\n${BLUE}${BOLD}[*]${NC} Kernel metadata:\n"
+if [ -f "$BUILD_DIR/iridium.elf" ]; then
+    KERNEL_SIZE=$(stat -c%s "$BUILD_DIR/iridium.elf")
+    printf "  ${GREEN}✓${NC} iridium.elf — ${BOLD}%s bytes${NC} (%s KB)\n" \
+        "$KERNEL_SIZE" $((KERNEL_SIZE / 1024))
+fi
 
-# Show section sizes
-echo ""
+printf "\n"
 text_size=$(objdump -h "$BUILD_DIR/iridium.elf" 2>/dev/null | awk '/\.text/ {print $3}' | tr -d '0')
 rodata_size=$(objdump -h "$BUILD_DIR/iridium.elf" 2>/dev/null | awk '/\.rodata/ {print $3}' | tr -d '0')
 bss_size=$(objdump -h "$BUILD_DIR/iridium.elf" 2>/dev/null | awk '/\.bss/ {print $3}' | tr -d '0')
-echo "  Section        Size"
-echo "  ─────────────  ─────"
-printf "  .text          %d\n" 0x$text_size
-printf "  .rodata        %d\n" 0x$rodata_size
-printf "  .bss           %d\n" 0x$bss_size
+printf "  Section        Size\n"
+printf "  ─────────────  ─────\n"
+printf "  .text          %d\n" "0x$text_size"
+printf "  .rodata        %d\n" "0x$rodata_size"
+printf "  .bss           %d\n" "0x$bss_size"
 
 # ---- Offer to run ----
-echo ""
-echo -e "${PURPLE}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}${BOLD}  Build complete!${NC}"
-echo -e "${PURPLE}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
+printf "\n"
+printf "${PURPLE}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+printf "${GREEN}${BOLD}  Build complete!${NC}\n"
+printf "${PURPLE}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+printf "\n"
 
-echo -e "${YELLOW}Run kernel in QEMU?${NC}"
-echo -e "  ${CYAN}1)${NC} GTK display (framebuffer)"
-echo -e "  ${CYAN}2)${NC} Clean build only"
-select yn in "GTK display (framebuffer)" "Clean build only"; do
-    case $yn in
-        "GTK display (framebuffer)" )
-            echo ""
-            echo -e "${BLUE}[*]${NC} Starting QEMU (GTK)..."
+printf "${YELLOW}Run kernel in QEMU?${NC}\n"
+printf "  ${CYAN}1)${NC} GTK display (framebuffer)\n"
+printf "  ${CYAN}2)${NC} Clean build only\n"
+
+while :; do
+    read -r _choice
+    case $_choice in
+        1)
+            printf "\n${BLUE}[*]${NC} Starting QEMU (GTK)...\n"
             qemu-system-i386 \
                 -kernel "$BUILD_DIR/iridium.elf" \
                 -m 64 \
@@ -127,10 +131,12 @@ select yn in "GTK display (framebuffer)" "Clean build only"; do
                 -no-shutdown
             break
             ;;
-        "Clean build only" )
-            echo ""
-            echo -e "${GREEN}Done.${NC}"
+        2)
+            printf "\n${GREEN}Done.${NC}\n"
             break
+            ;;
+        *)
+            printf "Invalid choice.\n"
             ;;
     esac
 done
