@@ -16,7 +16,19 @@ void kernel_main(void) {
     pit_init();
     keyboard_init();
 
-    __asm__("sti");
+__asm__("sti");
+
+    outb(0x3F8, 'A');
+    gdt_init();
+    outb(0x3F8, 'B');
+    idt_init();
+    outb(0x3F8, 'C');
+    pic_remap();
+    outb(0x3F8, 'D');
+    pit_init();
+    outb(0x3F8, 'E');
+    keyboard_init();
+    outb(0x3F8, 'F');
 
     terminal_initialize();
 
@@ -31,13 +43,13 @@ void kernel_main(void) {
     if (mem >= 1024) {
         uint32_t mib = mem / 1024;
         if (mib >= 100) { buf[len++] = '0' + mib / 100; mib %= 100; }
-        if (mib >= 10)  { buf[len++] = '0' + mib / 10; mib %= 10; }
+        if (mib >= 10)  { buf[len++] = '0' + (mib / 10) % 10; mib %= 10; }
         buf[len++] = '0' + mib;
         buf[len++] = 'M'; buf[len++] = 'i'; buf[len++] = 'B';
     } else {
         uint32_t n = mem;
         if (n >= 100) { buf[len++] = '0' + n / 100; n %= 100; }
-        if (n >= 10)  { buf[len++] = '0' + n / 10; n %= 10; }
+        if (n >= 10)  { buf[len++] = '0' + (n / 10) % 10; n %= 10; }
         buf[len++] = '0' + n;
         buf[len++] = 'K';
     }
