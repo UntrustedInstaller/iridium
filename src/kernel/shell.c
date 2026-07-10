@@ -33,6 +33,11 @@ static void cmd_hostname(const char*);
 static void cmd_true(const char*);
 static void cmd_false(const char*);
 static void cmd_mem(const char*);
+static void cmd_pwd(const char*);
+static void cmd_yes(const char*);
+static void cmd_sleep(const char*);
+static void cmd_date(const char*);
+static void cmd_env(const char*);
 
 static const struct cmd commands[] = {
     {"help",    "Show this help",             cmd_help},
@@ -46,6 +51,12 @@ static const struct cmd commands[] = {
     {"hostname","Print or set hostname",      cmd_hostname},
     {"true",    "Do nothing, successfully",   cmd_true},
     {"false",   "Do nothing, unsuccessfully", cmd_false},
+    {"pwd",     "Print working directory",    cmd_pwd},
+    {"yes",     "Output a string repeatedly", cmd_yes},
+    {"sleep",   "Suspend execution for interval", cmd_sleep},
+    {"date",    "Print system date and time", cmd_date},
+    {"env",     "Print environment",          cmd_env},
+    {"printenv","Print environment variables", cmd_env},
     {"mem",     "Show memory usage",          cmd_mem},
     {0, 0, 0}
 };
@@ -209,6 +220,82 @@ static void cmd_true(const char* args) {
 }
 
 static void cmd_false(const char* args) {
+    (void)args;
+}
+
+static void cmd_pwd(const char* args) {
+    (void)args;
+    putstr("/\n");
+}
+
+static void cmd_yes(const char* args) {
+    const char* p = args;
+    skip_spaces(&p);
+    while (*p && *p != ' ') p++;
+    skip_spaces(&p);
+    const char* word = *p ? p : "y";
+    while (1) {
+        putstr(word);
+        putstr("\n");
+        for (volatile int i = 0; i < 100000; i++);
+    }
+}
+
+static void cmd_sleep(const char* args) {
+    const char* p = args;
+    skip_spaces(&p);
+    while (*p && *p != ' ') p++;
+    skip_spaces(&p);
+    uint32_t secs = 0;
+    while (*p >= '0' && *p <= '9') {
+        secs = secs * 10 + (*p - '0');
+        p++;
+    }
+    if (secs == 0) secs = 1;
+    uint32_t start = pit_get_tick();
+    while (pit_get_tick() - start < secs * 100) {
+        if (!keyboard_data_available()) continue;
+        int c = keyboard_getchar();
+        if (c == 0x03) return;
+    }
+}
+
+static void cmd_date(const char* args) {
+    (void)args;
+    uint32_t t = pit_get_tick();
+    uint32_t uptime = t / 100;
+    uint32_t days = uptime / 86400;
+    uptime %= 86400;
+    uint32_t hours = uptime / 3600;
+    uint32_t mins = (uptime % 3600) / 60;
+    uint32_t secs = uptime % 60;
+
+    putstr("1970-01-01 +");
+    days += 1;
+    {
+        char dbuf[8];
+        int di = 0;
+        uint32_t d = days;
+        if (d == 0) { dbuf[di++] = '0'; }
+        while (d > 0) { dbuf[di++] = '0' + d % 10; d /= 10; }
+        while (di--) putch(dbuf[di]);
+    }
+    putstr(" days ");
+    if (hours < 10) putch('0');
+    putch('0' + hours / 10);
+    putch('0' + hours % 10);
+    putch(':');
+    if (mins < 10) putch('0');
+    putch('0' + mins / 10);
+    putch('0' + mins % 10);
+    putch(':');
+    if (secs < 10) putch('0');
+    putch('0' + secs / 10);
+    putch('0' + secs % 10);
+    putstr("\n");
+}
+
+static void cmd_env(const char* args) {
     (void)args;
 }
 
