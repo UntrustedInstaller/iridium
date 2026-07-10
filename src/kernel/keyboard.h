@@ -9,5 +9,6 @@
 void keyboard_init(void);
 void keyboard_handler(void);
 int  keyboard_getchar(void);
+int  keyboard_data_available(void);
 
 #endif

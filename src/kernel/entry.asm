@@ -34,7 +34,7 @@ _start:
     mov al, 0x80
     out dx, al          ; DLAB = 1
     mov dx, 0x3F8 + 0
-    mov al, 0x0C
+    mov al, 0x01
     out dx, al          ; Divisor low byte (115200 baud)
     mov dx, 0x3F8 + 1
     mov al, 0x00
@@ -51,17 +51,12 @@ _start:
 
     ; Early serial debug
     mov dx, 0x3F8
-    mov al, 'E'
+    mov al, 'S'
     out dx, al
 
     ; Call multiboot_init with saved values (already on stack)
     call multiboot_init
     add esp, 8
-
-    ; Early debug
-    mov dx, 0x3F8
-    mov al, 'K'
-    out dx, al
 
     call kernel_main
 

@@ -8,35 +8,59 @@
 #include "shell.h"
 #include "multiboot.h"
 #include "pmm.h"
+#include "paging.h"
+#include "kmalloc.h"
+#include "fbterm.h"
+#include "vbe.h"
+
+int use_fb = 0;
+
+void fbterm_enable(void) { use_fb = 1; }
+int fbterm_is_enabled(void) { return use_fb; }
+
+static void kwrite(const char* s) {
+    if (use_fb) fbterm_write(s);
+    else terminal_write(s);
+}
 
 void kernel_main(void) {
+    outb(0x3F8, 'K');
     gdt_init();
+    outb(0x3F8, 'G');
     idt_init();
+    outb(0x3F8, 'I');
     pic_remap();
+    outb(0x3F8, 'P');
     pit_init();
+    outb(0x3F8, 'T');
     keyboard_init();
+    outb(0x3F8, 'K');
 
-__asm__("sti");
+    __asm__("sti");
 
-    outb(0x3F8, 'A');
-    gdt_init();
-    outb(0x3F8, 'B');
-    idt_init();
-    outb(0x3F8, 'C');
-    pic_remap();
-    outb(0x3F8, 'D');
-    pit_init();
-    outb(0x3F8, 'E');
-    keyboard_init();
-    outb(0x3F8, 'F');
+    outb(0x3F8, 'V');
+    if (vbe_init(640, 480, 32)) {
+        outb(0x3F8, 'v');
+        fbterm_enable();
+        fbterm_init();
+        fbterm_setcolor(0xFFFFFFFF, 0xFF7845A8);
+    } else {
+        outb(0x3F8, 'X');
+        terminal_initialize();
+        outb(0x3F8, 'Y');
+        terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLUE));
+    }
+    outb(0x3F8, 'S');
 
-    terminal_initialize();
+    kwrite("IridiumOS 32-bit\n");
+    outb(0x3F8, '1');
+    kwrite("Osmium's periodic neighbor\n\n");
+    outb(0x3F8, '2');
+    kwrite("Pouring 0x0D cups of coffee... done.\n");
+    outb(0x3F8, '3');
+    kwrite("Counting RAM... ");
+    outb(0x3F8, '4');
 
-    terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLUE));
-    terminal_write("IridiumOS 32-bit\n");
-    terminal_write("Osmium's periodic neighbor\n\n");
-    terminal_write("Pouring 0x0D cups of coffee... done.\n");
-    terminal_write("Counting RAM... ");
     char buf[32];
     int len = 0;
     uint32_t mem = multiboot_get_total_memory_kb();
@@ -54,12 +78,16 @@ __asm__("sti");
         buf[len++] = 'K';
     }
     buf[len] = '\0';
-    terminal_write(buf);
-    terminal_write(" detected.\n");
+    kwrite(buf);
+    outb(0x3F8, '5');
+    kwrite(" detected.\n");
+    outb(0x3F8, '6');
 
     pmm_init();
+    outb(0x3F8, 'M');
 
-    terminal_write("Physical frames: ");
+    kwrite("Physical frames: ");
+    outb(0x3F8, 'F');
     int len2 = 0;
     uint32_t free = pmm_get_free_frames();
     if (free == 0) { buf[len2++] = '0'; }
@@ -76,11 +104,26 @@ __asm__("sti");
     }
     buf[len2++] = ' '; buf[len2++] = 'f'; buf[len2++] = 'r'; buf[len2++] = 'e'; buf[len2++] = 'e';
     buf[len2] = '\0';
-    terminal_write(buf);
-    terminal_write("\n");
+    kwrite(buf);
+    outb(0x3F8, 'f');
+    kwrite("\n");
+    outb(0x3F8, 'n');
 
-    terminal_write("Making sure the purple is purple enough. It is.\n");
-    terminal_write("Spinning up the thing that spins up things... done.\n\n");
+    outb(0x3F8, 'A');
+    paging_init();
+    outb(0x3F8, 'a');
+    kwrite("Page tables loaded. Ring the paging bell.\n");
+    outb(0x3F8, 'B');
+    kmalloc_init();
+    outb(0x3F8, 'b');
+    kwrite("Heap initialized at 0xE0000000.\n");
+    outb(0x3F8, 'H');
+
+    kwrite("Making sure the purple is purple enough. It is.\n");
+    outb(0x3F8, 'p');
+    kwrite("Spinning up the thing that spins up things... done.\n\n");
+    outb(0x3F8, 's');
 
     shell_run();
+    outb(0x3F8, 'Z');
 }

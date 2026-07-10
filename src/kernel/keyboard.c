@@ -88,9 +88,52 @@ int keyboard_getchar(void) {
     return c;
 }
 
+int keyboard_data_available(void) {
+    return buffer_head != buffer_tail;
+}
+
+static void keyboard_controller_wait(void) {
+    for (int i = 0; i < 100000; i++) {
+        if ((inb(KEYBOARD_CMD) & 0x02) == 0) return;
+        io_wait();
+    }
+}
+
+static void keyboard_wait_ack(void) {
+    for (int i = 0; i < 100000; i++) {
+        if (inb(KEYBOARD_CMD) & 0x01) {
+            uint8_t resp = inb(KEYBOARD_DATA);
+            if (resp == 0xFA) return;
+        }
+        io_wait();
+    }
+}
+
 void keyboard_init(void) {
     buffer_head = 0;
     buffer_tail = 0;
     shift_pressed = 0;
     extended = 0;
+
+    keyboard_controller_wait();
+    outb(KEYBOARD_CMD, 0xAD);
+    keyboard_controller_wait();
+
+    while (inb(KEYBOARD_CMD) & 0x01) inb(KEYBOARD_DATA);
+    keyboard_controller_wait();
+
+    outb(KEYBOARD_CMD, 0x20);
+    keyboard_controller_wait();
+    uint8_t status = inb(KEYBOARD_DATA);
+    status |= 0x01;
+    outb(KEYBOARD_CMD, 0x60);
+    keyboard_controller_wait();
+    outb(KEYBOARD_DATA, status);
+    keyboard_controller_wait();
+
+    outb(KEYBOARD_CMD, 0xAE);
+    keyboard_controller_wait();
+
+    outb(KEYBOARD_DATA, 0xF4);
+    keyboard_wait_ack();
 }

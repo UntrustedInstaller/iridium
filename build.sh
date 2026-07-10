@@ -70,7 +70,7 @@ CFLAGS="$CFLAGS -std=c99 -Wall -Wextra -Werror"
 CFLAGS="$CFLAGS -I$SRC_DIR/kernel -I$SRC_DIR/lib -I$SRC_DIR/drivers -I$SRC_DIR/fs -I$SRC_DIR/gui"
 CFLAGS="$CFLAGS -O2 -g"
 
-for c_file in "$SRC_DIR"/kernel/*.c; do
+for c_file in "$SRC_DIR"/kernel/*.c "$SRC_DIR"/drivers/*.c; do
     [ -f "$c_file" ] || continue
     base=$(basename "$c_file" .c)
     echo -e "  ${CYAN}→${NC} $base.o"
@@ -109,22 +109,24 @@ echo -e "${PURPLE}${BOLD}━━━━━━━━━━━━━━━━━━�
 echo ""
 
 echo -e "${YELLOW}Run kernel in QEMU?${NC}"
-select yn in "Yes, boot it" "No, exit"; do
+echo -e "  ${CYAN}1)${NC} GTK display (framebuffer)"
+echo -e "  ${CYAN}2)${NC} Clean build only"
+select yn in "GTK display (framebuffer)" "Clean build only"; do
     case $yn in
-        "Yes, boot it" )
+        "GTK display (framebuffer)" )
             echo ""
-            echo -e "${BLUE}[*]${NC} Starting QEMU..."
-            echo -e "  ${GREEN}→${NC} qemu-system-i386 -kernel $BUILD_DIR/iridium.elf${NC}"
-            echo ""
+            echo -e "${BLUE}[*]${NC} Starting QEMU (GTK)..."
             qemu-system-i386 \
                 -kernel "$BUILD_DIR/iridium.elf" \
                 -m 64 \
+                -vga vmware \
                 -serial stdio \
+                -display gtk \
                 -no-reboot \
                 -no-shutdown
             break
             ;;
-        "No, exit" )
+        "Clean build only" )
             echo ""
             echo -e "${GREEN}Done.${NC}"
             break

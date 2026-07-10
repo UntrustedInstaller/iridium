@@ -1,9 +1,12 @@
 #include "kernel.h"
 #include "shell.h"
+#include "fbterm.h"
 #include "terminal.h"
 #include "pit.h"
 #include "keyboard.h"
 #include "pmm.h"
+
+extern int use_fb;
 
 #define SHELL_BUF 256
 #define HISTORY_SIZE 8
@@ -51,6 +54,16 @@ static void skip_spaces(const char** p) {
     while (**p == ' ') (*p)++;
 }
 
+static void putch(char c) {
+    if (use_fb) fbterm_putchar(c);
+    else terminal_putchar(c);
+}
+
+static void putstr(const char* s) {
+    if (use_fb) fbterm_write(s);
+    else terminal_write(s);
+}
+
 static void history_add(const char* line) {
     int len = strlen(line);
     if (len == 0) return;
@@ -72,13 +85,13 @@ static void history_load(char* buf, int* pos, int idx) {
     int old = *pos;
     *pos = 0;
     while (history[idx][*pos]) (*pos)++;
-    terminal_putchar('\r');
-    terminal_write("> ");
-    terminal_write(history[idx]);
-    for (int i = *pos; i < old; i++) terminal_putchar(' ');
-    terminal_putchar('\r');
-    terminal_write("> ");
-    terminal_write(history[idx]);
+    putch('\r');
+    putstr("> ");
+    putstr(history[idx]);
+    for (int i = *pos; i < old; i++) putch(' ');
+    putch('\r');
+    putstr("> ");
+    putstr(history[idx]);
     *pos = strlen(history[idx]);
     int j;
     for (j = 0; history[idx][j]; j++) buf[j] = history[idx][j];
@@ -87,30 +100,31 @@ static void history_load(char* buf, int* pos, int idx) {
 
 static void history_clear(char* buf, int* pos) {
     int old = *pos;
-    terminal_putchar('\r');
-    terminal_write("> ");
-    for (int i = 0; i < old; i++) terminal_putchar(' ');
-    terminal_putchar('\r');
-    terminal_write("> ");
+    putch('\r');
+    putstr("> ");
+    for (int i = 0; i < old; i++) putch(' ');
+    putch('\r');
+    putstr("> ");
     *pos = 0;
     buf[0] = '\0';
 }
 
 static void cmd_help(const char* args) {
     (void)args;
-    terminal_write("Available commands:\n");
+    putstr("Available commands:\n");
     for (const struct cmd* c = commands; c->name; c++) {
-        terminal_write("  ");
-        terminal_write(c->name);
-        terminal_write(" - ");
-        terminal_write(c->desc);
-        terminal_write("\n");
+        putstr("  ");
+        putstr(c->name);
+        putstr(" - ");
+        putstr(c->desc);
+        putstr("\n");
     }
 }
 
 static void cmd_clear(const char* args) {
     (void)args;
-    terminal_clear();
+    if (use_fb) fbterm_clear();
+    else terminal_clear();
 }
 
 static void cmd_echo(const char* args) {
@@ -118,8 +132,8 @@ static void cmd_echo(const char* args) {
     skip_spaces(&p);
     while (*p && *p != ' ') p++;
     skip_spaces(&p);
-    terminal_write(p);
-    terminal_write("\n");
+    putstr(p);
+    putstr("\n");
 }
 
 static void cmd_uptime(const char* args) {
@@ -131,55 +145,48 @@ static void cmd_uptime(const char* args) {
     secs %= 60;
     mins %= 60;
 
-    terminal_write("Uptime: ");
+    putstr("Uptime: ");
     char buf[32];
     int p = 0;
 
     if (hours > 0) {
-        if (hours > 99) { buf[p++] = '0' + hours / 100; }
-        if (hours > 9)  { buf[p++] = '0' + (hours / 10) % 10; }
-        buf[p++] = '0' + hours % 10;
-        buf[p++] = ':';
+        if (hours > 9) { buf[p++] = '0' + hours / 10; hours %= 10; }
+        buf[p++] = '0' + hours;
+        buf[p++] = 'h';
     }
-    buf[p++] = '0' + mins / 10;
-    buf[p++] = '0' + mins % 10;
-    buf[p++] = ':';
+    if (mins > 0 || hours > 0) {
+        if (mins > 9) { buf[p++] = '0' + mins / 10; mins %= 10; }
+        buf[p++] = '0' + mins;
+        buf[p++] = 'm';
+    }
     buf[p++] = '0' + secs / 10;
     buf[p++] = '0' + secs % 10;
-    buf[p] = '\0';
-    terminal_write(buf);
-    terminal_write("\n");
+    buf[p++] = 's';
+    buf[p++] = '\0';
+    putstr(buf);
+    putstr("\n");
 }
 
 static void cmd_version(const char* args) {
     (void)args;
-    terminal_write("IridiumOS 32-bit Phase 1\n");
-    terminal_write("Boot protocol: Multiboot + PVH ELF note\n");
-    terminal_write("CPU: i686 (32-bit protected mode)\n");
+    putstr("IridiumOS 32-bit Phase 1\n");
+    putstr("Boot protocol: Multiboot + PVH ELF note\n");
+    putstr("CPU: i686 (32-bit protected mode)\n");
 }
 
 static void cmd_uname(const char* args) {
-    const char* p = args;
-    skip_spaces(&p);
-    while (*p && *p != ' ') p++;
-    skip_spaces(&p);
-    int all = (*p == '-' && p[1] == 'a');
-
-    if (all) {
-        terminal_write("IridiumOS iridium 0.1 Phase1 i686\n");
-    } else {
-        terminal_write("IridiumOS\n");
-    }
+    (void)args;
+    putstr("IridiumOS iridium 0.1 Phase1 i686\n");
 }
 
 static void cmd_whoami(const char* args) {
     (void)args;
-    terminal_write("root\n");
+    putstr("root\n");
 }
 
 static void cmd_id(const char* args) {
     (void)args;
-    terminal_write("uid=0(root) gid=0(root)\n");
+    putstr("uid=0(root) gid=0(root)\n");
 }
 
 static void cmd_hostname(const char* args) {
@@ -192,8 +199,8 @@ static void cmd_hostname(const char* args) {
         for (i = 0; *p && i < 63; i++) hostname[i] = *p++;
         hostname[i] = '\0';
     } else {
-        terminal_write(hostname);
-        terminal_write("\n");
+        putstr(hostname);
+        putstr("\n");
     }
 }
 
@@ -211,14 +218,14 @@ static void cmd_mem(const char* args) {
     uint32_t free = pmm_get_free_frames();
     uint32_t used = pmm_get_used_frames();
 
-    terminal_write("Total: ");
+    putstr("Total: ");
     char buf[16];
     int len = 0;
     uint32_t n = total;
     if (n == 0) { buf[len++] = '0'; }
     else { while (n > 0) { buf[len++] = '0' + n % 10; n /= 10; } }
-    for (int i = len - 1; i >= 0; i--) terminal_putchar(buf[i]);
-    terminal_write(" frames (");
+    for (int i = len - 1; i >= 0; i--) putch(buf[i]);
+    putstr(" frames (");
 
     // Total MiB
     uint32_t total_mib = (total * 4096) / (1024 * 1024);
@@ -230,22 +237,22 @@ static void cmd_mem(const char* args) {
     len = 0;
     if (n == 0) { buf[len++] = '0'; }
     else { while (n > 0) { buf[len++] = '0' + n % 10; n /= 10; } }
-    for (int i = len - 1; i >= 0; i--) terminal_putchar(buf[i]);
-    terminal_write(" MiB total, ");
+    for (int i = len - 1; i >= 0; i--) putch(buf[i]);
+    putstr(" MiB total, ");
 
     // Used MiB
     len = 0; n = used_mib;
     if (n == 0) { buf[len++] = '0'; }
     else { while (n > 0) { buf[len++] = '0' + n % 10; n /= 10; } }
-    for (int i = len - 1; i >= 0; i--) terminal_putchar(buf[i]);
-    terminal_write(" MiB used, ");
+    for (int i = len - 1; i >= 0; i--) putch(buf[i]);
+    putstr(" MiB used, ");
 
     // Free MiB
     len = 0; n = free_mib;
     if (n == 0) { buf[len++] = '0'; }
     else { while (n > 0) { buf[len++] = '0' + n % 10; n /= 10; } }
-    for (int i = len - 1; i >= 0; i--) terminal_putchar(buf[i]);
-    terminal_write(" MiB free)\n");
+    for (int i = len - 1; i >= 0; i--) putch(buf[i]);
+    putstr(" MiB free)\n");
 }
 
 void shell_run(void) {
@@ -253,14 +260,25 @@ void shell_run(void) {
     int pos = 0;
     int history_pos = -1;
 
-    terminal_setcolor(vga_entry_color(VGA_WHITE, VGA_BLUE));
-    terminal_write("> ");
+    if (use_fb) fbterm_setcolor(0xFFFFFFFF, 0xFF7845A8);
+    putstr("> ");
+
+    uint32_t last_blink = 0;
 
     while (1) {
+        uint32_t now = pit_get_tick();
+        if (!keyboard_data_available()) {
+            if (now - last_blink >= 25) {
+                fbterm_update_cursor();
+                last_blink = now;
+            }
+            continue;
+        }
         int c = keyboard_getchar();
+        last_blink = now;
 
         if (c == '\n') {
-            terminal_write("\n");
+            putstr("\n");
             buf[pos] = '\0';
 
             if (pos > 0) {
@@ -280,18 +298,18 @@ void shell_run(void) {
                     }
                 }
                 if (!found) {
-                    terminal_write("Unknown command. Type 'help'.\n");
+                    putstr("Unknown command. Type 'help'.\n");
                 }
             }
             history_pos = -1;
             pos = 0;
-            terminal_write("> ");
+            putstr("> ");
         } else if (c == '\b' || c == 0x7F) {
             if (pos > 0) {
                 pos--;
-                terminal_putchar('\b');
-                terminal_putchar(' ');
-                terminal_putchar('\b');
+                putch('\b');
+                putch(' ');
+                putch('\b');
             }
         } else if (c == KEY_UP) {
             if (history_count > 0 && history_pos < history_count - 1) {
@@ -305,13 +323,13 @@ void shell_run(void) {
                 int idx = history_count - 1 - history_pos;
                 history_load(buf, &pos, idx);
             } else if (history_pos == 0) {
-                history_pos = -1;
                 history_clear(buf, &pos);
+                history_pos = -1;
             }
-        } else if (c >= 32 && c < 127) {
+        } else if (c >= 0x20 && c <= 0x7E) {
             if (pos < SHELL_BUF - 1) {
-                buf[pos++] = c;
-                terminal_putchar(c);
+                buf[pos++] = (char)c;
+                putch((char)c);
             }
         }
     }
